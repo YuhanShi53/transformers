@@ -184,3 +184,6 @@ test-results/
 # AI agent local setup artifacts
 /.agents/skills
 /.claude/skills
+
+# Model directories
+models/
