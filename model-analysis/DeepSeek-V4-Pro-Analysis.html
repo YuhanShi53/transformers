@@ -1,0 +1,2896 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek-V4 Pro 模型架构深度解读</title>
+<style>
+/* ==================== CSS Variables & Theme ==================== */
+:root {
+  --bg: #ffffff; --bg-alt: #f8f9fa; --bg-code: #f1f3f5;
+  --text: #1a1a2e; --text-secondary: #495057; --text-muted: #868e96;
+  --border: #dee2e6; --border-light: #e9ecef;
+  --accent: #4263eb; --accent-light: #dbe4ff; --accent-dark: #364fc7;
+  --success: #2b8a3e; --warning: #e67700; --danger: #c92a2a;
+  --purple: #7048e8; --teal: #0c8599; --pink: #e64980;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+  --radius: 8px; --radius-sm: 4px;
+  --sidebar-w: 280px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --shape-color: #e64980; --dim-color: #0c8599; --dtype-color: #7048e8;
+  --svg-node-fill: #dbe4ff; --svg-node-stroke: #4263eb;
+  --svg-hca-fill: #fff3bf; --svg-csa-fill: #d3f9d8; --svg-mtp-fill: #ffe3e3;
+  --svg-text: #1a1a2e;
+}
+[data-theme="dark"] {
+  --bg: #1a1b26; --bg-alt: #24283b; --bg-code: #292e42;
+  --text: #c0caf5; --text-secondary: #a9b1d6; --text-muted: #565f89;
+  --border: #3b4261; --border-light: #292e42;
+  --accent: #7aa2f7; --accent-light: #292e42; --accent-dark: #89b4fa;
+  --success: #9ece6a; --warning: #e0af68; --danger: #f7768e;
+  --purple: #bb9af7; --teal: #73daca; --pink: #f7768e;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
+  --svg-node-fill: #292e42; --svg-node-stroke: #7aa2f7;
+  --svg-hca-fill: #3b3523; --svg-csa-fill: #253330; --svg-mtp-fill: #3b2528;
+  --svg-text: #c0caf5;
+}
+
+/* ==================== Reset & Base ==================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+body {
+  font-family: var(--font-sans); background: var(--bg); color: var(--text);
+  line-height: 1.7; font-size: 15px; transition: background 0.3s, color 0.3s;
+}
+
+/* ==================== Layout ==================== */
+.layout { display: flex; min-height: 100vh; }
+.sidebar {
+  position: fixed; top: 0; left: 0; width: var(--sidebar-w); height: 100vh;
+  background: var(--bg-alt); border-right: 1px solid var(--border);
+  overflow-y: auto; z-index: 100; transition: transform 0.3s;
+  display: flex; flex-direction: column;
+}
+.sidebar-header {
+  padding: 20px 16px 12px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--bg-alt); z-index: 1;
+}
+.sidebar-header h2 { font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+.sidebar-header .subtitle { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sidebar-nav { padding: 8px 0; flex: 1; overflow-y: auto; }
+.sidebar-nav a {
+  display: block; padding: 6px 16px 6px 20px; font-size: 13px; color: var(--text-secondary);
+  text-decoration: none; border-left: 3px solid transparent; transition: all 0.15s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sidebar-nav a:hover { color: var(--accent); background: var(--accent-light); }
+.sidebar-nav a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-light); font-weight: 600; }
+.sidebar-nav .nav-group { padding: 8px 16px 4px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; }
+.sidebar-nav a.sub { padding-left: 32px; font-size: 12px; }
+
+.main { margin-left: var(--sidebar-w); flex: 1; max-width: 960px; padding: 40px 48px 80px; }
+
+/* ==================== Top Bar ==================== */
+.topbar {
+  position: fixed; top: 0; left: var(--sidebar-w); right: 0; height: 48px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 24px; z-index: 99; gap: 12px;
+}
+.search-box {
+  display: flex; align-items: center; background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px; flex: 0 1 260px;
+}
+.search-box input {
+  border: none; background: transparent; outline: none; font-size: 13px;
+  color: var(--text); width: 100%; padding: 2px 4px;
+}
+.search-box input::placeholder { color: var(--text-muted); }
+.search-box svg { width: 14px; height: 14px; stroke: var(--text-muted); flex-shrink: 0; }
+.theme-toggle {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--bg-alt); cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 16px; transition: all 0.2s;
+}
+.theme-toggle:hover { border-color: var(--accent); }
+.menu-toggle {
+  display: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--bg-alt); cursor: pointer; align-items: center; justify-content: center; font-size: 18px;
+}
+
+/* ==================== Typography ==================== */
+.main > section { padding-top: 60px; }
+h1 { font-size: 32px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; }
+h1 .version { font-size: 14px; font-weight: 500; color: var(--accent); vertical-align: middle; margin-left: 8px; background: var(--accent-light); padding: 2px 10px; border-radius: 12px; }
+.hero-desc { font-size: 16px; color: var(--text-secondary); margin-bottom: 32px; max-width: 680px; }
+h2 { font-size: 24px; font-weight: 700; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--text); }
+h4 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; color: var(--text-secondary); }
+p { margin-bottom: 12px; }
+a { color: var(--accent); }
+
+/* ==================== Cards & Metrics ==================== */
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px; margin: 20px 0;
+}
+.metric-card {
+  background: var(--bg-alt); border: 1px solid var(--border-light); border-radius: var(--radius);
+  padding: 16px; text-align: center; transition: transform 0.15s, box-shadow 0.15s;
+}
+.metric-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.metric-value { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1.2; }
+.metric-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+.metric-card.purple .metric-value { color: var(--purple); }
+.metric-card.teal .metric-value { color: var(--teal); }
+.metric-card.pink .metric-value { color: var(--pink); }
+.metric-card.success .metric-value { color: var(--success); }
+.metric-card.warning .metric-value { color: var(--warning); }
+
+/* ==================== Info Box ==================== */
+.info-box {
+  background: var(--accent-light); border-left: 4px solid var(--accent);
+  padding: 12px 16px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 16px 0; font-size: 14px;
+}
+.info-box.warn { background: #fff9db; border-left-color: var(--warning); }
+[data-theme="dark"] .info-box.warn { background: #3b3523; }
+.info-box strong { color: var(--accent); }
+.info-box.warn strong { color: var(--warning); }
+
+/* ==================== Code Blocks ==================== */
+pre {
+  background: var(--bg-code); border: 1px solid var(--border-light);
+  border-radius: var(--radius); padding: 16px; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
+  margin: 12px 0; position: relative;
+}
+pre .line-num { color: var(--text-muted); user-select: none; display: inline-block; width: 32px; text-align: right; margin-right: 12px; }
+code { font-family: var(--font-mono); font-size: 13px; }
+:not(pre) > code { background: var(--bg-code); padding: 2px 6px; border-radius: 3px; font-size: 12.5px; }
+.shape { color: var(--shape-color); font-weight: 600; font-style: italic; }
+.dim { color: var(--dim-color); font-weight: 600; }
+.dtype { color: var(--dtype-color); font-weight: 600; }
+.comment { color: var(--text-muted); font-style: italic; }
+.kw { color: var(--accent); font-weight: 600; }
+.fn { color: var(--purple); }
+.str { color: var(--success); }
+.num { color: var(--warning); }
+pre .file-tag {
+  position: absolute; top: 8px; right: 12px; font-size: 11px;
+  color: var(--text-muted); background: var(--bg); padding: 2px 8px;
+  border-radius: 4px; border: 1px solid var(--border-light);
+}
+
+/* ==================== Shape Flow Table ==================== */
+.shape-flow {
+  width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;
+}
+.shape-flow th {
+  background: var(--accent); color: white; padding: 8px 12px;
+  text-align: left; font-weight: 600; font-size: 12px;
+}
+.shape-flow td {
+  padding: 6px 12px; border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+}
+.shape-flow tr:hover { background: var(--accent-light); }
+.shape-flow .op { font-weight: 600; color: var(--purple); font-family: var(--font-mono); font-size: 12px; }
+.shape-flow .tensor-shape { color: var(--shape-color); font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+.shape-flow .tensor-dtype { color: var(--dtype-color); font-family: var(--font-mono); font-size: 11px; }
+.shape-flow .note { color: var(--text-muted); font-size: 12px; }
+
+/* ==================== Details / Collapsible ==================== */
+details {
+  border: 1px solid var(--border-light); border-radius: var(--radius);
+  margin: 12px 0; overflow: hidden;
+}
+details > summary {
+  padding: 10px 16px; background: var(--bg-alt); cursor: pointer;
+  font-weight: 600; font-size: 14px; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  list-style: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▶'; font-size: 10px; transition: transform 0.2s; color: var(--text-muted); }
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary:hover { background: var(--accent-light); }
+details > .details-content { padding: 16px; }
+
+/* ==================== SVG Diagrams ==================== */
+.diagram-container {
+  margin: 20px 0; overflow-x: auto; padding: 8px 0;
+  display: flex; justify-content: center;
+}
+.diagram-container svg { max-width: 100%; height: auto; }
+svg text { font-family: var(--font-sans); }
+svg .node { cursor: pointer; transition: opacity 0.2s; }
+svg .node:hover { opacity: 0.85; }
+svg .node rect, svg .node path { transition: stroke-width 0.2s; }
+svg .node:hover rect, svg .node:hover path { stroke-width: 2.5; }
+
+/* ==================== Layer Map ==================== */
+.layer-map {
+  display: grid; grid-template-columns: repeat(31, 1fr); gap: 2px;
+  margin: 16px 0; padding: 8px;
+}
+.layer-cell {
+  aspect-ratio: 1; border-radius: 3px; position: relative;
+  cursor: pointer; transition: transform 0.1s; font-size: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; color: white;
+}
+.layer-cell:hover { transform: scale(1.3); z-index: 1; }
+.layer-cell.hca { background: #e67700; }
+.layer-cell.csa { background: #2b8a3e; }
+.layer-cell.mtp { background: #c92a2a; }
+.layer-cell.sw { background: #4263eb; }
+.layer-tooltip {
+  display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%); background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 8px; font-size: 11px;
+  white-space: nowrap; z-index: 10; box-shadow: var(--shadow); color: var(--text);
+}
+.layer-cell:hover .layer-tooltip { display: block; }
+
+/* ==================== Config Table ==================== */
+.config-table {
+  width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;
+}
+.config-table th {
+  background: var(--bg-alt); padding: 8px 12px; text-align: left;
+  font-weight: 600; border-bottom: 2px solid var(--border); font-size: 12px;
+}
+.config-table td { padding: 6px 12px; border-bottom: 1px solid var(--border-light); }
+.config-table tr:hover { background: var(--accent-light); }
+.config-table .key { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+.config-table .val { font-family: var(--font-mono); font-weight: 600; }
+
+/* ==================== Tabs ==================== */
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin: 16px 0 0; }
+.tab-btn {
+  padding: 8px 20px; border: none; background: none; font-size: 13px;
+  font-weight: 600; color: var(--text-muted); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-content { display: none; padding: 16px 0; }
+.tab-content.active { display: block; }
+
+/* ==================== Legend ==================== */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; font-size: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-color { width: 14px; height: 14px; border-radius: 3px; }
+
+/* ==================== Search Results ==================== */
+.search-results {
+  display: none; position: fixed; top: 48px; right: 24px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); max-height: 400px; overflow-y: auto;
+  width: 320px; z-index: 200;
+}
+.search-results.show { display: block; }
+.search-result-item {
+  padding: 8px 12px; border-bottom: 1px solid var(--border-light);
+  cursor: pointer; font-size: 13px;
+}
+.search-result-item:hover { background: var(--accent-light); }
+.search-result-item .match { font-weight: 600; color: var(--accent); }
+
+/* ==================== Mobile ==================== */
+@media (max-width: 900px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; padding: 40px 20px 80px; }
+  .topbar { left: 0; }
+  .menu-toggle { display: flex; }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .layer-map { grid-template-columns: repeat(16, 1fr); }
+}
+
+/* ==================== Scrollbar ==================== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ==================== Animations ==================== */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+section { animation: fadeIn 0.4s ease-out; }
+
+/* Sinkhorn animation */
+.sinkhorn-demo { margin: 16px 0; }
+.sinkhorn-grid {
+  display: grid; grid-template-columns: repeat(4, 48px); gap: 4px;
+  margin: 8px auto; width: fit-content;
+}
+.sinkhorn-cell {
+  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+  transition: background 0.5s, color 0.3s;
+}
+.sinkhorn-controls { text-align: center; margin: 12px 0; }
+.sinkhorn-controls button {
+  padding: 6px 16px; border: 1px solid var(--accent); background: var(--accent-light);
+  color: var(--accent); border-radius: 16px; cursor: pointer; font-size: 12px; font-weight: 600;
+  margin: 0 4px; transition: all 0.2s;
+}
+.sinkhorn-controls button:hover { background: var(--accent); color: white; }
+.sinkhorn-iter-label { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+
+/* ==================== Print ==================== */
+@media print {
+  .sidebar, .topbar, .menu-toggle, .theme-toggle, .search-box { display: none !important; }
+  .main { margin-left: 0; max-width: 100%; padding: 20px; }
+  details { border: none; } details[open] > summary { display: none; }
+  pre { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== SIDEBAR ==================== -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h2>DeepSeek-V4 Pro</h2>
+    <div class="subtitle">模型架构深度解读 · 源码级分析</div>
+  </div>
+  <div class="sidebar-nav" id="sidebarNav">
+    <div class="nav-group">总览</div>
+    <a href="#overview">模型总览</a>
+    <a href="#config-map" class="sub">超参数映射</a>
+    <a href="#arch-diagram" class="sub">全局架构图</a>
+
+    <div class="nav-group">核心模块</div>
+    <a href="#mhc">流形约束超连接 (mHC)</a>
+    <a href="#mhc-pre" class="sub">hc_pre 预组合</a>
+    <a href="#mhc-post" class="sub">hc_post 后组合</a>
+    <a href="#sinkhorn" class="sub">Sinkhorn 核</a>
+    <a href="#attention">混合注意力</a>
+    <a href="#attn-layers" class="sub">61层类型分布</a>
+    <a href="#hca-design" class="sub">HCA 模块设计</a>
+    <a href="#csa-design" class="sub">CSA 模块设计</a>
+    <a href="#compress-math" class="sub">门控池化机制</a>
+    <a href="#attn-hca-csa" class="sub">HCA vs CSA 对比</a>
+    <a href="#attn-qpath" class="sub">Q / KV / O 路径</a>
+    <a href="#sparse-attn" class="sub">稀疏注意力核</a>
+    <a href="#compressor">KV 压缩器</a>
+    <a href="#compressor-decode" class="sub">Decode 增量路径</a>
+    <a href="#kv-layout" class="sub">KV 缓存布局</a>
+    <a href="#indexer">稀疏索引器</a>
+
+    <div class="nav-group">MoE 与量化</div>
+    <a href="#moe">MoE 模块</a>
+    <a href="#gate" class="sub">Gate 路由</a>
+    <a href="#expert" class="sub">Expert FFN</a>
+    <a href="#quant">量化系统</a>
+    <a href="#act-quant" class="sub">FP8 激活量化</a>
+    <a href="#fp8-gemm" class="sub">FP8 GEMM</a>
+    <a href="#fp4-gemm" class="sub">FP4 GEMM</a>
+
+    <div class="nav-group">其他模块</div>
+    <a href="#mtp">Multi-Token Prediction</a>
+    <a href="#linear-dispatch">线性层精度分发</a>
+    <a href="#parallel-head">ParallelHead 输出</a>
+    <a href="#rope-detail">RoPE / YaRN 细节</a>
+    <a href="#inference">推理管线</a>
+    <a href="#convert">权重转换</a>
+    <a href="#convert-woa" class="sub">wo_a 反量化</a>
+  </div>
+</nav>
+
+<!-- ==================== TOPBAR ==================== -->
+<div class="topbar">
+  <button class="menu-toggle" id="menuToggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+  <div class="search-box">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="searchInput" placeholder="搜索模块、关键词..." oninput="handleSearch(this.value)">
+  </div>
+  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切换主题">🌙</button>
+</div>
+<div class="search-results" id="searchResults"></div>
+
+<!-- ==================== MAIN CONTENT ==================== -->
+<div class="layout">
+<main class="main" id="mainContent">
+
+<!-- ==================== SECTION 1: OVERVIEW ==================== -->
+<section id="overview">
+<h1>DeepSeek-V4 Pro<span class="version">1.6T MoE</span></h1>
+<p class="hero-desc">
+  DeepSeek-V4 Pro 是 DeepSeek 系列最新的 1.6T 参数混合专家语言模型，支持百万 token 上下文。
+  本报告基于官方推理源码（<code>inference/model.py</code>、<code>kernel.py</code>、<code>generate.py</code>、<code>convert.py</code>）进行逐模块深度解读，追踪每一步的 tensor shape 变换。
+</p>
+
+<div class="metrics-grid">
+  <div class="metric-card"><div class="metric-value">1.6T</div><div class="metric-label">总参数量</div></div>
+  <div class="metric-card teal"><div class="metric-value">49B</div><div class="metric-label">激活参数量</div></div>
+  <div class="metric-card purple"><div class="metric-value">61</div><div class="metric-label">Transformer 层数</div></div>
+  <div class="metric-card pink"><div class="metric-value">7168</div><div class="metric-label">隐藏维度 (dim)</div></div>
+  <div class="metric-card success"><div class="metric-value">1M</div><div class="metric-label">最大上下文长度</div></div>
+  <div class="metric-card warning"><div class="metric-value">384</div><div class="metric-label">路由专家数</div></div>
+  <div class="metric-card"><div class="metric-value">6</div><div class="metric-label">激活专家数/token</div></div>
+  <div class="metric-card teal"><div class="metric-value">128</div><div class="metric-label">注意力头数</div></div>
+  <div class="metric-card purple"><div class="metric-value">512</div><div class="metric-label">head_dim</div></div>
+  <div class="metric-card pink"><div class="metric-value">FP4+FP8</div><div class="metric-label">混合精度</div></div>
+</div>
+
+<div class="info-box">
+  <strong>架构创新点总结：</strong>
+  ① <b>流形约束超连接 (mHC)</b> — 4条残差流 + Sinkhorn双随机矩阵替代简单残差连接；
+  ② <b>混合注意力</b> — HCA (128×压缩) 与 CSA (4×压缩) 交替，1M上下文仅需10% KV缓存；
+  ③ <b>384路由专家 MoE</b> — 前3层哈希路由 + sqrtsoftplus评分 + FP4专家权重；
+  ④ <b>学习型稀疏索引</b> — Indexer通过Hadamard旋转+FP4模拟选择top-k压缩KV；
+  ⑤ <b>MTP (Multi-Token Prediction)</b> — 附加预测头，训练时辅助学习。
+</div>
+
+<!-- Config Mapping Table -->
+<h3 id="config-map">config.json 超参数映射</h3>
+<p>以下表格列出 <code>config.json</code> 中的关键超参数及其在代码中的对应关系：</p>
+<table class="config-table">
+<thead><tr><th>config.json 键名</th><th>值</th><th>代码中的名称</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td class="key">hidden_size</td><td class="val">7168</td><td><code>args.dim</code></td><td>模型隐藏维度，所有层的输入/输出维度</td></tr>
+<tr><td class="key">num_hidden_layers</td><td class="val">61</td><td><code>args.n_layers</code></td><td>Transformer Block 数量</td></tr>
+<tr><td class="key">num_attention_heads</td><td class="val">128</td><td><code>args.n_heads</code></td><td>注意力头数</td></tr>
+<tr><td class="key">head_dim</td><td class="val">512</td><td><code>args.head_dim</code></td><td>每个注意力头的维度（含 RoPE 64 + nope 448）</td></tr>
+<tr><td class="key">qk_rope_head_dim</td><td class="val">64</td><td><code>args.rope_head_dim</code></td><td>应用 RoPE 的维度数</td></tr>
+<tr><td class="key">q_lora_rank</td><td class="val">1536</td><td><code>args.q_lora_rank</code></td><td>Q 的低秩投影维度</td></tr>
+<tr><td class="key">o_lora_rank</td><td class="val">1024</td><td><code>args.o_lora_rank</code></td><td>O 的低秩投影维度（每组）</td></tr>
+<tr><td class="key">o_groups</td><td class="val">16</td><td><code>args.o_groups</code></td><td>O 投影分组数</td></tr>
+<tr><td class="key">n_routed_experts</td><td class="val">384</td><td><code>args.n_routed_experts</code></td><td>路由专家总数</td></tr>
+<tr><td class="key">num_experts_per_tok</td><td class="val">6</td><td><code>args.n_activated_experts</code></td><td>每token激活的专家数</td></tr>
+<tr><td class="key">moe_intermediate_size</td><td class="val">3072</td><td><code>args.moe_inter_dim</code></td><td>专家 FFN 中间维度</td></tr>
+<tr><td class="key">num_hash_layers</td><td class="val">3</td><td><code>args.n_hash_layers</code></td><td>使用哈希路由的前N层</td></tr>
+<tr><td class="key">hc_mult</td><td class="val">4</td><td><code>args.hc_mult</code></td><td>超连接残差流倍数</td></tr>
+<tr><td class="key">hc_sinkhorn_iters</td><td class="val">20</td><td><code>args.hc_sinkhorn_iters</code></td><td>Sinkhorn 迭代次数</td></tr>
+<tr><td class="key">sliding_window</td><td class="val">128</td><td><code>args.window_size</code></td><td>滑动窗口大小</td></tr>
+<tr><td class="key">compress_ratios</td><td class="val">[128,128,4,...,4,0]</td><td><code>args.compress_ratios</code></td><td>每层的KV压缩比（0=纯滑窗, 4=CSA, 128=HCA）</td></tr>
+<tr><td class="key">index_topk</td><td class="val">1024</td><td><code>args.index_topk</code></td><td>稀疏索引器选择的 top-k KV数</td></tr>
+<tr><td class="key">scoring_func</td><td class="val">sqrtsoftplus</td><td><code>args.score_func</code></td><td>MoE 路由评分函数</td></tr>
+<tr><td class="key">routed_scaling_factor</td><td class="val">2.5</td><td><code>args.route_scale</code></td><td>路由权重缩放因子</td></tr>
+<tr><td class="key">swiglu_limit</td><td class="val">10.0</td><td><code>args.swiglu_limit</code></td><td>SwiGLU 激活值裁剪阈值</td></tr>
+<tr><td class="key">expert_dtype</td><td class="val">fp4</td><td><code>args.expert_dtype</code></td><td>专家权重精度 (FP4 E2M1)</td></tr>
+<tr><td class="key">rope_theta</td><td class="val">10000</td><td><code>args.rope_theta</code></td><td>RoPE 基频（纯滑窗层使用）</td></tr>
+<tr><td class="key">compress_rope_theta</td><td class="val">160000</td><td><code>args.compress_rope_theta</code></td><td>压缩注意力层的 RoPE 基频</td></tr>
+<tr><td class="key">rope_scaling.factor</td><td class="val">16</td><td><code>args.rope_factor</code></td><td>YaRN 频率插值因子</td></tr>
+<tr><td class="key">max_position_embeddings</td><td class="val">1048576</td><td><code>args.max_seq_len</code></td><td>最大序列长度 (1M tokens)</td></tr>
+</tbody>
+</table>
+
+<!-- Global Architecture Diagram -->
+<h3 id="arch-diagram">全局架构图</h3>
+<p>下图展示 DeepSeek-V4 Pro 的整体前向传播流程，点击各模块可跳转到详细解读：</p>
+
+<details>
+<summary>Transformer.forward() 完整代码解读 · model.py L802-809</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L802-809</span>
+@torch.inference_mode()
+<span class="kw">def</span> <span class="fn">forward</span>(self, input_ids, start_pos=0):
+    <span class="comment"># input_ids: <span class="shape">[b, s]</span> <span class="dtype">int64</span></span>
+    h = self.embed(input_ids)       <span class="comment"># <span class="shape">[b, s, 7168]</span> ← ParallelEmbedding (vocab 分片 + all_reduce)</span>
+
+    <span class="comment"># HC 展开: 单向量复制为 4 条并行残差流</span>
+    h = h.unsqueeze(2).repeat(1, 1, self.hc_mult, 1)
+    <span class="comment"># <span class="shape">[b, s, 7168]</span> → <span class="shape">[b, s, 1, 7168]</span> → <span class="shape">[b, s, 4, 7168]</span></span>
+
+    <span class="comment"># 61 层 Transformer Block</span>
+    <span class="kw">for</span> layer <span class="kw">in</span> self.layers:
+        h = layer(h, start_pos, input_ids)
+        <span class="comment"># 每层: hc_pre(attn) → attn_norm → Attention → hc_post(attn)</span>
+        <span class="comment">#       hc_pre(ffn) → ffn_norm → MoE → hc_post(ffn)</span>
+        <span class="comment"># h 始终保持 <span class="shape">[b, s, 4, 7168]</span> (4条残差流)</span>
+
+    <span class="comment"># 最终输出: 简化 HC (sigmoid, 无 Sinkhorn) → RMSNorm → LM Head</span>
+    logits = self.head(h, self.hc_head_fn, self.hc_head_scale, self.hc_head_base, self.norm)
+    <span class="comment"># hc_head: <span class="shape">[b, s, 4, 7168]</span> → <span class="shape">[b, s, 7168]</span> (合并4条流)</span>
+    <span class="comment"># norm: RMSNorm</span>
+    <span class="comment"># get_logits: F.linear(h[:, -1], weight) → <span class="shape">[b, 129280]</span> (只取最后位置!)</span>
+    <span class="kw">return</span> logits</pre>
+</div>
+</details>
+
+<details>
+<summary>Block.forward() 单层前向 · model.py L688-700</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L688-700</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, start_pos, input_ids):
+    <span class="comment"># x: <span class="shape">[b, s, 4, 7168]</span> ← 4条残差流</span>
+
+    <span class="comment"># ── Attention 子层 ──</span>
+    residual = x
+    x, post, comb = self.hc_pre(x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base)
+    <span class="comment"># x: <span class="shape">[b, s, 7168]</span> ← 4条流加权合并为1</span>
+    x = self.attn_norm(x)       <span class="comment"># RMSNorm</span>
+    x = self.attn(x, start_pos) <span class="comment"># <span class="shape">[b, s, 7168]</span> ← HCA/CSA + sparse_attn</span>
+    x = self.hc_post(x, residual, post, comb)
+    <span class="comment"># x: <span class="shape">[b, s, 4, 7168]</span> ← 分配回4条流 + 双随机残差混合</span>
+
+    <span class="comment"># ── FFN 子层 ──</span>
+    residual = x
+    x, post, comb = self.hc_pre(x, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base)
+    x = self.ffn_norm(x)        <span class="comment"># RMSNorm</span>
+    x = self.ffn(x, input_ids)  <span class="comment"># <span class="shape">[b, s, 7168]</span> ← MoE (384 experts, top-6)</span>
+    x = self.hc_post(x, residual, post, comb)
+    <span class="comment"># x: <span class="shape">[b, s, 4, 7168]</span></span>
+    <span class="kw">return</span> x</pre>
+</div>
+</details>
+<div class="diagram-container">
+<svg viewBox="0 0 820 680" xmlns="http://www.w3.org/2000/svg" style="font-family: var(--font-sans); width: 100%; max-width: 820px;">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="var(--accent)"/></marker>
+    <marker id="arrow-gray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="var(--text-muted)"/></marker>
+    <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.1"/></filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="410" y="28" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text)">DeepSeek-V4 Pro · 前向传播全局架构</text>
+
+  <!-- Input -->
+  <g class="node" onclick="document.getElementById('inference').scrollIntoView({behavior:'smooth'})">
+    <rect x="330" y="42" width="160" height="36" rx="18" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="65" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">input_ids [b, s]</text>
+  </g>
+  <line x1="410" y1="78" x2="410" y2="96" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Embed -->
+  <g class="node" onclick="document.getElementById('overview').scrollIntoView({behavior:'smooth'})">
+    <rect x="315" y="98" width="190" height="40" rx="6" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="115" text-anchor="middle" font-size="11" font-weight="700" fill="var(--svg-text)">ParallelEmbedding</text>
+    <text x="410" y="129" text-anchor="middle" font-size="10" fill="var(--text-muted)" font-style="italic">[b, s] → [b, s, 7168]</text>
+  </g>
+  <line x1="410" y1="138" x2="410" y2="156" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- HC Expand -->
+  <g class="node" onclick="document.getElementById('mhc').scrollIntoView({behavior:'smooth'})">
+    <rect x="290" y="158" width="240" height="40" rx="6" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="175" text-anchor="middle" font-size="11" font-weight="700" fill="var(--purple)">HC Expand: .unsqueeze(2).repeat(1,1,4,1)</text>
+    <text x="410" y="189" text-anchor="middle" font-size="10" fill="var(--text-muted)" font-style="italic">[b, s, 7168] → [b, s, 4, 7168]</text>
+  </g>
+  <line x1="410" y1="198" x2="410" y2="218" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Transformer Blocks -->
+  <rect x="180" y="220" width="460" height="310" rx="8" fill="none" stroke="var(--border)" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="195" y="238" font-size="11" font-weight="700" fill="var(--text-muted)">× 61 Transformer Blocks</text>
+
+  <!-- HC Pre (Attn) -->
+  <g class="node" onclick="document.getElementById('mhc-pre').scrollIntoView({behavior:'smooth'})">
+    <rect x="240" y="248" width="160" height="32" rx="5" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+    <text x="320" y="268" text-anchor="middle" font-size="10" font-weight="600" fill="var(--purple)">hc_pre (Attn)</text>
+  </g>
+
+  <!-- Attn Norm -->
+  <g class="node">
+    <rect x="420" y="248" width="100" height="32" rx="5" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+    <text x="470" y="268" text-anchor="middle" font-size="10" fill="var(--text-secondary)">attn_norm</text>
+  </g>
+  <line x1="400" y1="264" x2="418" y2="264" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Attention -->
+  <g class="node" onclick="document.getElementById('attention').scrollIntoView({behavior:'smooth'})">
+    <rect x="270" y="294" width="280" height="44" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="312" text-anchor="middle" font-size="11" font-weight="700" fill="var(--success)">Hybrid Attention (HCA / CSA)</text>
+    <text x="410" y="328" text-anchor="middle" font-size="9" fill="var(--text-muted)">Q低秩 → KV压缩(128×/4×) → 稀疏注意力 → O分组低秩</text>
+  </g>
+  <line x1="470" y1="280" x2="410" y2="292" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- HC Post (Attn) -->
+  <g class="node" onclick="document.getElementById('mhc-post').scrollIntoView({behavior:'smooth'})">
+    <rect x="320" y="352" width="180" height="32" rx="5" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+    <text x="410" y="372" text-anchor="middle" font-size="10" font-weight="600" fill="var(--purple)">hc_post (Attn) → residual</text>
+  </g>
+  <line x1="410" y1="338" x2="410" y2="350" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- HC Pre (FFN) -->
+  <g class="node" onclick="document.getElementById('mhc-pre').scrollIntoView({behavior:'smooth'})">
+    <rect x="240" y="398" width="160" height="32" rx="5" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+    <text x="320" y="418" text-anchor="middle" font-size="10" font-weight="600" fill="var(--purple)">hc_pre (FFN)</text>
+  </g>
+
+  <!-- FFN Norm -->
+  <g class="node">
+    <rect x="420" y="398" width="100" height="32" rx="5" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+    <text x="470" y="418" text-anchor="middle" font-size="10" fill="var(--text-secondary)">ffn_norm</text>
+  </g>
+  <line x1="400" y1="414" x2="418" y2="414" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="410" y1="384" x2="410" y2="396" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- MoE -->
+  <g class="node" onclick="document.getElementById('moe').scrollIntoView({behavior:'smooth'})">
+    <rect x="270" y="444" width="280" height="44" rx="6" fill="var(--svg-hca-fill)" stroke="var(--warning)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="462" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warning)">MoE (384 Experts, Top-6)</text>
+    <text x="410" y="478" text-anchor="middle" font-size="9" fill="var(--text-muted)">Gate路由 → 6个Expert SwiGLU + 1个Shared Expert</text>
+  </g>
+  <line x1="470" y1="430" x2="410" y2="442" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- HC Post (FFN) -->
+  <g class="node" onclick="document.getElementById('mhc-post').scrollIntoView({behavior:'smooth'})">
+    <rect x="320" y="502" width="180" height="32" rx="5" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+    <text x="410" y="522" text-anchor="middle" font-size="10" font-weight="600" fill="var(--purple)">hc_post (FFN) → residual</text>
+  </g>
+  <line x1="410" y1="488" x2="410" y2="500" stroke="var(--accent)" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Loop arrow -->
+  <path d="M410,534 L410,540 Q410,548 418,548 L640,548 Q650,548 650,540 L650,240 Q650,232 642,232 L550,232" fill="none" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-gray)"/>
+  <text x="658" y="395" font-size="10" fill="var(--text-muted)" transform="rotate(-90,658,395)">循环 ×61</text>
+
+  <!-- After blocks -->
+  <line x1="410" y1="534" x2="410" y2="558" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- HC Head -->
+  <g class="node" onclick="document.getElementById('mhc').scrollIntoView({behavior:'smooth'})">
+    <rect x="290" y="560" width="240" height="36" rx="6" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="578" text-anchor="middle" font-size="11" font-weight="700" fill="var(--purple)">HC Head → RMSNorm → Linear</text>
+    <text x="410" y="590" text-anchor="middle" font-size="10" fill="var(--text-muted)" font-style="italic">[b,s,4,7168] → [b,s,7168] → logits</text>
+  </g>
+  <line x1="410" y1="596" x2="410" y2="614" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Logits -->
+  <g class="node">
+    <rect x="330" y="616" width="160" height="36" rx="18" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="410" y="639" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">logits [b, 129280]</text>
+  </g>
+
+  <!-- MTP Branch -->
+  <g class="node" onclick="document.getElementById('mtp').scrollIntoView({behavior:'smooth'})">
+    <rect x="30" y="560" width="220" height="44" rx="6" fill="var(--svg-mtp-fill)" stroke="var(--danger)" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="140" y="578" text-anchor="middle" font-size="11" font-weight="700" fill="var(--danger)">MTP Block (Layer 61)</text>
+    <text x="140" y="592" text-anchor="middle" font-size="9" fill="var(--text-muted)">embed + h_proj → Block → HC-Head</text>
+  </g>
+  <path d="M288,575 L252,575" fill="none" stroke="var(--danger)" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="270" y="568" font-size="9" fill="var(--danger)">训练时</text>
+</svg>
+</div>
+</section>
+
+<!-- ==================== SECTION 2: mHC ==================== -->
+<section id="mhc">
+<h2>流形约束超连接 (Manifold-Constrained Hyper-Connections)</h2>
+<p>
+  DeepSeek-V4 用 <b>mHC</b> 替代了传统的残差连接 <code>y = x + f(x)</code>。核心思想是维护 <code>hc_mult=4</code> 条<b>并行残差流</b>，
+  每个子层（Attention / FFN）通过可学习的 <b>pre-combination</b> 和 <b>post-combination</b> 矩阵，动态决定如何混合这些流。
+  组合矩阵通过 <b>Sinkhorn 迭代</b>约束为双随机矩阵（每行每列和为1），保证信息在流形上的均匀传播。
+</p>
+<p><b>源码位置：</b><code>model.py</code> Block 类 (L647-700)，kernel.py hc_split_sinkhorn_kernel (L371-427) + wrapper (L430-438)</p>
+
+<!-- mHC Dataflow Diagram -->
+<div class="diagram-container">
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:760px;">
+  <defs><marker id="a2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="380" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">mHC 数据流（单个子层）</text>
+
+  <!-- Input: 4 streams -->
+  <text x="50" y="55" font-size="11" font-weight="600" fill="var(--text-muted)">输入: [b, s, 4, d]</text>
+  <rect x="30" y="62" width="80" height="24" rx="4" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/><text x="70" y="78" text-anchor="middle" font-size="10" fill="#364fc7" font-weight="600">流 0</text>
+  <rect x="120" y="62" width="80" height="24" rx="4" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/><text x="160" y="78" text-anchor="middle" font-size="10" fill="#2b8a3e" font-weight="600">流 1</text>
+  <rect x="210" y="62" width="80" height="24" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/><text x="250" y="78" text-anchor="middle" font-size="10" fill="#e67700" font-weight="600">流 2</text>
+  <rect x="300" y="62" width="80" height="24" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/><text x="340" y="78" text-anchor="middle" font-size="10" fill="#c92a2a" font-weight="600">流 3</text>
+
+  <!-- hc_pre box -->
+  <rect x="20" y="108" width="370" height="100" rx="6" fill="none" stroke="var(--purple)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="35" y="126" font-size="11" font-weight="700" fill="var(--purple)">hc_pre()</text>
+
+  <!-- Flatten + Linear -->
+  <rect x="40" y="134" width="140" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="110" y="151" text-anchor="middle" font-size="9" fill="var(--text)">flatten → F.linear(hc_fn)</text>
+
+  <!-- Sinkhorn -->
+  <rect x="200" y="134" width="170" height="26" rx="4" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+  <text x="285" y="151" text-anchor="middle" font-size="9" fill="var(--purple)" font-weight="600">hc_split_sinkhorn()</text>
+
+  <!-- Outputs of sinkhorn -->
+  <text x="50" y="182" font-size="9" fill="var(--accent)" font-weight="600">pre [b,s,4]</text>
+  <text x="170" y="182" font-size="9" fill="var(--success)" font-weight="600">post [b,s,4]</text>
+  <text x="290" y="182" font-size="9" fill="var(--warning)" font-weight="600">comb [b,s,4,4]</text>
+
+  <!-- Weighted sum -->
+  <rect x="40" y="196" width="220" height="26" rx="4" fill="var(--accent-light)" stroke="var(--accent)" stroke-width="1"/>
+  <text x="150" y="213" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="600">y = Σ(pre × stream_i) → [b, s, d]</text>
+
+  <!-- Arrow to sublayer -->
+  <line x1="260" y1="209" x2="410" y2="209" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- Sublayer -->
+  <rect x="415" y="190" width="160" height="38" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="495" y="210" text-anchor="middle" font-size="11" font-weight="700" fill="var(--success)">Attention / MoE</text>
+  <text x="495" y="222" text-anchor="middle" font-size="9" fill="var(--text-muted)">f(norm(y))</text>
+
+  <!-- Arrow to hc_post -->
+  <line x1="495" y1="228" x2="495" y2="260" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- hc_post box -->
+  <rect x="310" y="264" width="420" height="90" rx="6" fill="none" stroke="var(--purple)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="325" y="282" font-size="11" font-weight="700" fill="var(--purple)">hc_post()</text>
+
+  <text x="330" y="302" font-size="10" fill="var(--text)">output[i] = <tspan font-weight="600" fill="var(--success)">post[i]</tspan> × sublayer_out + Σⱼ(<tspan font-weight="600" fill="var(--warning)">comb[i,j]</tspan> × <tspan font-weight="600" fill="var(--accent)">residual[j]</tspan>)</text>
+  <text x="330" y="320" font-size="10" fill="var(--text-muted)">post门控调节新信息注入量，comb矩阵在4条残差流间做双随机混合</text>
+  <text x="330" y="340" font-size="9" fill="var(--shape-color)" font-style="italic">输出: [b, s, 4, d] — 4条残差流全部更新</text>
+
+  <!-- Output streams -->
+  <rect x="330" y="366" width="80" height="20" rx="4" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/><text x="370" y="380" text-anchor="middle" font-size="9" fill="#364fc7" font-weight="600">流 0'</text>
+  <rect x="420" y="366" width="80" height="20" rx="4" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/><text x="460" y="380" text-anchor="middle" font-size="9" fill="#2b8a3e" font-weight="600">流 1'</text>
+  <rect x="510" y="366" width="80" height="20" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/><text x="550" y="380" text-anchor="middle" font-size="9" fill="#e67700" font-weight="600">流 2'</text>
+  <rect x="600" y="366" width="80" height="20" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/><text x="640" y="380" text-anchor="middle" font-size="9" fill="#c92a2a" font-weight="600">流 3'</text>
+</svg>
+</div>
+
+<h3 id="mhc-pre">hc_pre — 预组合（4条流合为1）</h3>
+<p>将 4 条残差流加权合并为单一向量，送入子层（Attention 或 FFN）。权重由 Sinkhorn 核产生的 <code>pre</code> 向量控制。</p>
+
+<details open>
+<summary>Block.hc_pre() 代码解读 · model.py L673-681</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L673-681</span>
+<span class="kw">def</span> <span class="fn">hc_pre</span>(self, x, hc_fn, hc_scale, hc_base):
+    <span class="comment"># x: [b, s, hc, d] = [b, s, 4, 7168]  ← 4条残差流</span>
+    <span class="comment"># hc_fn: [24, 28672]  (mix_hc=24, hc_dim=4×7168=28672)</span>
+    shape, dtype = x.size(), x.dtype
+    x = x.flatten(2).float()       <span class="comment"># <span class="shape">[b, s, 28672]</span> ← 4条流拼接</span>
+    rsqrt = torch.rsqrt(x.square().mean(-1, keepdim=True) + self.norm_eps)
+                                    <span class="comment"># <span class="shape">[b, s, 1]</span> ← RMSNorm 的归一化因子</span>
+    mixes = F.linear(x, hc_fn) * rsqrt
+                                    <span class="comment"># <span class="shape">[b, s, 24]</span> ← 线性投影 + 归一化</span>
+    pre, post, comb = hc_split_sinkhorn(mixes, hc_scale, hc_base,
+                                         self.hc_mult, self.hc_sinkhorn_iters, self.hc_eps)
+    <span class="comment"># pre:  <span class="shape">[b, s, 4]</span>    ← sigmoid 门控</span>
+    <span class="comment"># post: <span class="shape">[b, s, 4]</span>    ← 2×sigmoid 门控</span>
+    <span class="comment"># comb: <span class="shape">[b, s, 4, 4]</span> ← Sinkhorn 双随机矩阵</span>
+    y = torch.sum(pre.unsqueeze(-1) * x.view(shape), dim=2)
+    <span class="comment"># pre.unsqueeze(-1): <span class="shape">[b, s, 4, 1]</span></span>
+    <span class="comment"># x.view(shape):     <span class="shape">[b, s, 4, 7168]</span></span>
+    <span class="comment"># 加权求和 dim=2:    <span class="shape">[b, s, 7168]</span> ← 4条流合为1</span>
+    <span class="kw">return</span> y.to(dtype), post, comb</pre>
+</div>
+</details>
+
+<table class="shape-flow">
+<thead><tr><th>步骤</th><th>操作</th><th>输入 Shape</th><th>输出 Shape</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>1</td><td class="op">flatten(2)</td><td class="tensor-shape">[b, s, 4, 7168]</td><td class="tensor-shape">[b, s, 28672]</td><td class="note">4条残差流拼接为一个大向量</td></tr>
+<tr><td>2</td><td class="op">F.linear(hc_fn)</td><td class="tensor-shape">[b, s, 28672]</td><td class="tensor-shape">[b, s, 24]</td><td class="note">投影到 mix_hc=(2+4)×4=24 维</td></tr>
+<tr><td>3</td><td class="op">hc_split_sinkhorn</td><td class="tensor-shape">[b, s, 24]</td><td class="tensor-shape">pre[b,s,4] + post[b,s,4] + comb[b,s,4,4]</td><td class="note">拆分为 pre/post/comb 并做 Sinkhorn</td></tr>
+<tr><td>4</td><td class="op">Σ(pre × stream)</td><td class="tensor-shape">[b, s, 4, 7168]</td><td class="tensor-shape">[b, s, 7168]</td><td class="note">pre 加权合并 4 条流</td></tr>
+</tbody>
+</table>
+
+<h3 id="mhc-post">hc_post — 后组合（子层输出分配回4条流）</h3>
+<p>子层（Attention/FFN）的输出是单一向量 <code>[b, s, d]</code>，hc_post 将其通过 <code>post</code> 门控分配到 4 条流，
+并通过 <code>comb</code> 双随机矩阵混合残差：</p>
+
+<details open>
+<summary>Block.hc_post() 代码解读 · model.py L683-686</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L683-686</span>
+<span class="kw">def</span> <span class="fn">hc_post</span>(self, x, residual, post, comb):
+    <span class="comment"># x:        [b, s, d]      = [b, s, 7168]     ← 子层输出</span>
+    <span class="comment"># residual: [b, s, hc, d]  = [b, s, 4, 7168]  ← 原始4条流</span>
+    <span class="comment"># post:     [b, s, hc]     = [b, s, 4]         ← 后门控</span>
+    <span class="comment"># comb:     [b, s, hc, hc] = [b, s, 4, 4]      ← 双随机矩阵</span>
+    y = post.unsqueeze(-1) * x.unsqueeze(-2) \
+      + torch.sum(comb.unsqueeze(-1) * residual.unsqueeze(-2), dim=2)
+    <span class="comment"># ── 第一项: 新信息注入 ──</span>
+    <span class="comment"># post.unsqueeze(-1):         <span class="shape">[b, s, 4, 1]</span></span>
+    <span class="comment"># x.unsqueeze(-2):            <span class="shape">[b, s, 1, 7168]</span></span>
+    <span class="comment"># → broadcast乘:             <span class="shape">[b, s, 4, 7168]</span>  ← post[i]控制注入到流i的强度</span>
+
+    <span class="comment"># ── 第二项: 残差流双随机混合 ──</span>
+    <span class="comment"># comb.unsqueeze(-1):         <span class="shape">[b, s, 4, 4, 1]</span>  ← axes: [b, s, i_out, j_in, d]</span>
+    <span class="comment"># residual.unsqueeze(-2):     <span class="shape">[b, s, 1, 4, 7168]</span></span>
+    <span class="comment"># → broadcast乘:             <span class="shape">[b, s, 4, 4, 7168]</span></span>
+    <span class="comment"># → sum(dim=2):              <span class="shape">[b, s, 4, 7168]</span>  ← 对 j_in 求和</span>
+    <span class="comment"># 注意: unsqueeze(-2) 使 residual 的 hc 维度在 dim=3,</span>
+    <span class="comment"># sum(dim=2) 对乘积的 i_out 维度求和 → 效果等价于矩阵乘 comb @ residual</span>
+    <span class="comment"># 即 output[i] = Σⱼ comb[i,j] × residual[j]</span>
+
+    <span class="comment"># 最终: y[i] = post[i]×f(x) + Σⱼ comb[i,j]×residual[j]</span>
+    <span class="comment"># y: <span class="shape">[b, s, 4, 7168]</span> — 更新后的4条残差流</span>
+    <span class="kw">return</span> y.type_as(x)</pre>
+</div>
+</details>
+
+<div class="info-box">
+  <strong>mHC 的直觉：</strong> 传统残差 <code>y = x + f(x)</code> 只有"加"这一种组合方式。
+  mHC 的 4 条流 + 双随机矩阵实际上允许每层动态学习一个"排列+缩放"操作：
+  <code>output[i] = post[i]×f(x) + Σⱼ comb[i,j]×residual[j]</code>。
+  由于 comb 是双随机矩阵（行列和为1），信息量守恒，不会出现某条流消失或膨胀。
+</div>
+
+<h3 id="sinkhorn">Sinkhorn 核 — 生成双随机组合矩阵</h3>
+<p><code>hc_split_sinkhorn</code> 将 24 维 mixes 向量拆分为 pre / post / comb 三部分，并将 comb 约束为双随机矩阵。
+  具体步骤：先对 comb 做 softmax（行归一化），再做列归一化，然后交替 <b>行归一化→列归一化 × (sinkhorn_iters−1) = 19 次</b>。
+  合计 1 次初始 softmax + 1 次列归一化 + 19 轮交替 = <b>20 轮归一化</b>，对应 <code>hc_sinkhorn_iters=20</code>：</p>
+
+<details>
+<summary>hc_split_sinkhorn_kernel 代码解读 · kernel.py L371-438</summary>
+<div class="details-content">
+<pre><span class="file-tag">kernel.py L371-438</span>
+<span class="comment"># mix_hc = (2 + hc_mult) * hc_mult = (2+4)*4 = 24</span>
+<span class="comment"># mixes: [n, 24] 拆分为 3 部分:</span>
+<span class="comment"># [0:4]   → pre  logits  (4个, 控制合并权重)</span>
+<span class="comment"># [4:8]   → post logits  (4个, 控制注入权重)</span>
+<span class="comment"># [8:24]  → comb logits  (4×4=16个, 展平的组合矩阵)</span>
+
+<span class="comment"># Step 1: pre[j] = sigmoid(mixes[j] * hc_scale[0] + hc_base[j]) + ε</span>
+<span class="comment">#   → [n, 4], 值域 (ε, 1+ε), sigmoid门控 + ε防止零权重</span>
+
+<span class="comment"># Step 2: post[j] = 2 × sigmoid(mixes[j+4] * hc_scale[1] + hc_base[j+4])</span>
+<span class="comment">#   → [n, 4], 值域 (0, 2), 门控新信息注入强度(>1可放大)</span>
+
+<span class="comment"># Step 3: comb[j,k] = mixes[j*4+k+8] * hc_scale[2] + hc_base[j*4+k+8]</span>
+<span class="comment">#   reshape → [n, 4, 4]</span>
+<span class="comment">#   → softmax(dim=-1) + ε        <span class="kw"># 行归一化(使每行和=1)</span></span>
+<span class="comment">#   → / col_sum(dim=0)           <span class="kw"># 列归一化(使每列和=1)</span></span>
+<span class="comment">#   → for _ in range(19):        <span class="kw"># sinkhorn_iters-1 = 19 轮交替</span></span>
+<span class="comment">#       / row_sum(dim=1)         <span class="kw"># 行归一化</span></span>
+<span class="comment">#       / col_sum(dim=0)         <span class="kw"># 列归一化</span></span>
+<span class="comment">#   → 收敛为双随机矩阵: 每行和≈1, 每列和≈1</span>
+
+<span class="comment"># 关键代码对应 (kernel.py L391-424):</span>
+<span class="comment"># pre:  L391-392  sigmoid(mix * scale + base) + eps</span>
+<span class="comment"># post: L393-394  2 * sigmoid(mix * scale + base)</span>
+<span class="comment"># comb: L395-396  affine transform → reshape</span>
+<span class="comment"># softmax: L401-408  row_max → exp → row_sum → normalize + eps</span>
+<span class="comment"># col_norm: L410-413  col_sum → divide</span>
+<span class="comment"># loop: L415-423  T.serial(sinkhorn_iters-1) 交替 row/col</span></pre>
+</div>
+</details>
+
+<!-- Sinkhorn Interactive Demo -->
+<h4>Sinkhorn 迭代演示</h4>
+<p>点击 "下一步" 观察一个 4×4 矩阵如何通过交替行/列归一化趋近双随机矩阵：</p>
+<div class="sinkhorn-demo">
+  <div style="display:flex;gap:32px;align-items:flex-start;justify-content:center;flex-wrap:wrap;">
+    <div>
+      <div style="text-align:center;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">组合矩阵 comb[4×4]</div>
+      <div class="sinkhorn-grid" id="sinkhornGrid"></div>
+    </div>
+    <div>
+      <div style="text-align:center;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">行和 / 列和</div>
+      <div id="sinkhornSums" style="font-family:var(--font-mono);font-size:12px;line-height:1.8;"></div>
+    </div>
+  </div>
+  <div class="sinkhorn-controls">
+    <button onclick="sinkhornReset()">重置</button>
+    <button onclick="sinkhornStep()">下一步</button>
+    <button onclick="sinkhornAutoPlay()">自动播放</button>
+    <span class="sinkhorn-iter-label" id="sinkhornLabel">初始 softmax 归一化</span>
+  </div>
+</div>
+</section>
+
+<!-- ==================== SECTION 3: ATTENTION ==================== -->
+<section id="attention">
+<h2>混合注意力 (Hybrid Attention Architecture)</h2>
+<p>
+  DeepSeek-V4 的注意力机制从 V2/V3 的 MLA (Multi-head Latent Attention) 演进而来。
+  底层 Q/KV/O 路径仍保留了 MLA 的核心设计——<b>低秩 Q 投影、单头联合 KV latent、分组低秩 O 投影</b>——
+  因此推理源码 <code>model.py</code> 中 Attention 类的注释仍然沿用 "MLA" 名称（L437）。
+  但在此基础上，DeepSeek-V4 引入了全新的<b>混合压缩注意力架构</b>，
+  通过不同压缩策略将 61 层分为两类：
+</p>
+<ul>
+  <li><b>HCA (Heavily Compressed Attention, ratio=128)</b> — 128 个 token 压缩为 1 条 KV 记录，无 Indexer，<b>全量</b>访问压缩 KV</li>
+  <li><b>CSA (Compressed Sparse Attention, ratio=4)</b> — 4 个 token 压缩为 1 条 KV 记录（带 overlap 窗口），通过<b>学习型 Indexer</b> 选择 top-k=1024 最相关的压缩 KV</li>
+</ul>
+<p>
+  所有层共享一个大小为 128 的<b>滑动窗口</b>，保证局部信息的无损传递。
+  这种 HCA+CSA 交替的混合架构，使得 DeepSeek-V4 在 1M 上下文长度下实现了极低的 KV 缓存开销。
+</p>
+
+<div class="info-box">
+  <strong>为什么源码注释写的是 MLA 而不是 HCA/CSA？</strong>
+  Attention 类（model.py L436-543）是 HCA 和 CSA 的<b>统一实现</b>，通过 <code>compress_ratio</code> 参数区分行为。
+  其 Q/KV/O 路径沿用了 V2/V3 的 MLA 设计模式（低秩投影 + 联合 latent），因此代码注释保留了 "MLA" 的说法。
+  但在架构层面，DeepSeek-V4 已不再是纯粹的 MLA——它用<b>KV 压缩 + 稀疏索引</b>替代了 V3 的完整 latent attention，
+  形成了 HCA 和 CSA 两种新的注意力变体。
+  <br><br>
+  <b>与 V3 MLA 的关键差异：</b>
+  ① V3 的 KV 使用低秩压缩（<code>kv_lora_rank</code>），缓存中存的是 latent 向量，注意力时需要上投影恢复；
+  V4 的 KV 直接投影到 <code>head_dim=512</code> 并存入缓存，然后通过 Compressor 做<b>token 维度的池化压缩</b>。
+  ② V3 对所有 KV 做全注意力；V4 引入滑动窗口 + 压缩 KV 的<b>稀疏索引</b>（sparse_attn）。
+  ③ V4 新增 Indexer 模块（仅 CSA 层），通过 Hadamard+FP4 量化模拟的轻量打分来选择 top-k 压缩 KV。
+</div>
+
+<h3 id="attn-layers">61 层注意力类型分布</h3>
+<p>每个方块代表一层，悬停查看 compress_ratio。最后一个是 MTP 层（ratio=0，纯滑窗）。</p>
+<div class="legend">
+  <div class="legend-item"><div class="legend-color" style="background:#e67700;"></div> HCA (ratio=128)</div>
+  <div class="legend-item"><div class="legend-color" style="background:#2b8a3e;"></div> CSA (ratio=4)</div>
+  <div class="legend-item"><div class="legend-color" style="background:#4263eb;"></div> 纯滑窗 (ratio=0)</div>
+</div>
+<div class="layer-map" id="layerMap"></div>
+<p style="font-size:12px;color:var(--text-muted);">
+  模式分析：Layer 0-1 为 HCA(128)，之后 Layer 2-60 形成 <b>CSA(4) - HCA(128)</b> 的交替模式：
+  29 个 (CSA, HCA) 对覆盖 Layer 2-59，Layer 60 为额外的 CSA 层。合计 <b>31 层 HCA + 30 层 CSA</b>。
+  最后 Layer 61（索引=61）为 MTP 纯滑窗层（ratio=0）。
+</p>
+
+<!-- ==================== HCA DETAILED ==================== -->
+<h3 id="hca-design">HCA 模块设计详解 (ratio=128)</h3>
+<p>
+  HCA (Heavily Compressed Attention) 每 128 个连续 token 被门控池化为 <b>1 条</b> KV 记录。
+  因压缩后的记录数极少（1M token 仅产生约 8192 条），HCA 层<b>不需要 Indexer</b>——静态索引函数
+  <code>get_compress_topk_idxs()</code> 直接枚举全部压缩 KV 位置即可。
+  <b>源码：</b><code>model.py</code> Attention L436 + Compressor L283（<code>compress_ratio=128</code>, <code>rotate=False</code>）。
+</p>
+
+<h4>HCA 完整参数表</h4>
+<table class="config-table">
+<thead><tr><th>模块 · 参数</th><th>形状 / 类型</th><th>说明</th><th>model.py</th></tr></thead>
+<tbody>
+<tr><td class="key" colspan="4" style="background:var(--accent-light);color:var(--accent);font-size:11px;letter-spacing:.5px">Attention 基础参数</td></tr>
+<tr><td class="key">attn_sink</td><td class="val">[n_local_heads] FP32</td><td>可学习 attention sink 标量，防止稀疏注意力分布退化</td><td>L441</td></tr>
+<tr><td class="key">wq_a</td><td class="val">Linear(7168 → 1536)</td><td>Q 低秩下投影</td><td>L457</td></tr>
+<tr><td class="key">q_norm</td><td class="val">RMSNorm(1536)</td><td>低秩空间归一化，稳定训练</td><td>L458</td></tr>
+<tr><td class="key">wq_b</td><td class="val">ColParallel(1536 → 128×512)</td><td>Q 上投影，列并行分片</td><td>L459</td></tr>
+<tr><td class="key">wkv</td><td class="val">Linear(7168 → 512)</td><td>单头联合 KV 投影（沿用 MLA latent 设计）</td><td>L460</td></tr>
+<tr><td class="key">kv_norm</td><td class="val">RMSNorm(512)</td><td>KV 归一化</td><td>L461</td></tr>
+<tr><td class="key">wo_a</td><td class="val">ColParallel(4096 → 16×1024) BF16</td><td>分组低秩输出投影（128头÷16组=每组8头×512=4096→1024）</td><td>L462</td></tr>
+<tr><td class="key">wo_b</td><td class="val">RowParallel(16×1024 → 7168)</td><td>输出上投影，行并行+all_reduce</td><td>L463</td></tr>
+<tr><td class="key">indexer</td><td class="val">None</td><td>HCA 无 Indexer</td><td>L468-471</td></tr>
+<tr><td class="key" colspan="4" style="background:var(--accent-light);color:var(--accent);font-size:11px;letter-spacing:.5px">HCA Compressor（ratio=128, overlap=False, coff=1）</td></tr>
+<tr><td class="key">compressor.wkv</td><td class="val">Linear(7168 → 512) FP32</td><td>Compressor KV 投影（coff=1 → 输出 1×head_dim）</td><td>L296</td></tr>
+<tr><td class="key">compressor.wgate</td><td class="val">Linear(7168 → 512) FP32</td><td>门控分数投影</td><td>L297</td></tr>
+<tr><td class="key">compressor.ape</td><td class="val">Parameter(128, 512) FP32</td><td>可学习位置编码：128 窗口内每个位置一个 512 维向量</td><td>L294</td></tr>
+<tr><td class="key">compressor.norm</td><td class="val">RMSNorm(512)</td><td>压缩后归一化</td><td>L298</td></tr>
+<tr><td class="key">compressor.kv_state</td><td class="val">[b, 128, 512] FP32</td><td>Decode 阶段：积累当前窗口内各 token 的 KV</td><td>L303</td></tr>
+<tr><td class="key">compressor.score_state</td><td class="val">[b, 128, 512] FP32</td><td>Decode 阶段：积累当前窗口内各 token 的门控分数</td><td>L304</td></tr>
+<tr><td class="key">kv_cache (整层)</td><td class="val">[b, 128 + max_len//128, 512]</td><td>前 128 槽 = 滑动窗口区；后部 = Compressor 写入的压缩区</td><td>L473-474</td></tr>
+</tbody>
+</table>
+
+<!-- HCA Compression Pipeline Diagram -->
+<h4>HCA 门控池化压缩流程图（Prefill）</h4>
+<div class="diagram-container">
+<svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;">
+  <defs><marker id="ah1" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="400" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">HCA Compressor 门控池化流程（ratio=128，无 Overlap）</text>
+
+  <!-- Input x -->
+  <rect x="300" y="36" width="200" height="30" rx="15" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="400" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">x [b, s, 7168]</text>
+
+  <!-- Two branches -->
+  <line x1="340" y1="66" x2="190" y2="96" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <line x1="460" y1="66" x2="610" y2="96" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+
+  <!-- KV branch -->
+  <rect x="100" y="98" width="180" height="28" rx="4" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1.2"/>
+  <text x="190" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2b8a3e">wkv: Linear(7168→512)</text>
+
+  <!-- Gate branch -->
+  <rect x="520" y="98" width="180" height="28" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1.2"/>
+  <text x="610" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#e67700">wgate: Linear(7168→512)</text>
+
+  <!-- kv after wkv -->
+  <line x1="190" y1="126" x2="190" y2="148" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="80" y="150" width="220" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="190" y="165" text-anchor="middle" font-size="9" fill="var(--text)">kv  <tspan fill="var(--text-muted)">FP32 [b, s, 512]</tspan></text>
+
+  <!-- gate after wgate -->
+  <line x1="610" y1="126" x2="610" y2="148" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="500" y="150" width="220" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="610" y="165" text-anchor="middle" font-size="9" fill="var(--text)">score  <tspan fill="var(--text-muted)">FP32 [b, s, 512]</tspan></text>
+
+  <!-- APE addition -->
+  <rect x="500" y="186" width="220" height="30" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="610" y="200" text-anchor="middle" font-size="9" fill="#c92a2a" font-weight="600">+ ape [128, 512]</text>
+  <text x="610" y="212" text-anchor="middle" font-size="8" fill="var(--text-muted)">可学习位置编码，broadcast 到 ratio 维</text>
+  <line x1="610" y1="174" x2="610" y2="184" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+
+  <!-- Unflatten -->
+  <line x1="190" y1="174" x2="190" y2="222" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <line x1="610" y1="216" x2="610" y2="222" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="40" y="224" width="340" height="28" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="210" y="242" text-anchor="middle" font-size="9" fill="var(--text)">kv <tspan fill="var(--text-muted)">unflatten(1, (-1, 128))</tspan> → <tspan fill="var(--shape-color)">[b, n, 128, 512]</tspan></text>
+  <rect x="420" y="224" width="340" height="28" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="590" y="242" text-anchor="middle" font-size="9" fill="var(--text)">score <tspan fill="var(--text-muted)">unflatten + ape</tspan> → <tspan fill="var(--shape-color)">[b, n, 128, 512]</tspan></text>
+
+  <!-- Softmax + multiply -->
+  <line x1="210" y1="252" x2="350" y2="278" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <line x1="590" y1="252" x2="450" y2="278" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="200" y="280" width="400" height="36" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="400" y="298" text-anchor="middle" font-size="11" font-weight="700" fill="var(--success)">门控池化: (kv × softmax(score, dim=2)).sum(dim=2)</text>
+  <text x="400" y="312" text-anchor="middle" font-size="9" fill="var(--text-muted)">softmax 在 ratio=128 维上归一化 → 128个token的池化权重</text>
+
+  <!-- Compressed output -->
+  <line x1="400" y1="316" x2="400" y2="334" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="270" y="336" width="260" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="400" y="353" text-anchor="middle" font-size="9" fill="var(--text)">compressed_kv <tspan fill="var(--shape-color)">[b, n, 512]</tspan>  <tspan fill="var(--text-muted)">n = s//128</tspan></text>
+
+  <!-- Post-processing chain -->
+  <line x1="530" y1="349" x2="600" y2="349" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="602" y="336" width="76" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="640" y="353" text-anchor="middle" font-size="9" fill="var(--text)">norm (RMS)</text>
+  <line x1="678" y1="349" x2="706" y2="349" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="708" y="336" width="72" height="26" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="744" y="348" text-anchor="middle" font-size="8.5" fill="#e67700" font-weight="600">RoPE</text>
+  <text x="744" y="359" text-anchor="middle" font-size="8" fill="var(--text-muted)">后64维</text>
+
+  <!-- FP8 quant -->
+  <line x1="744" y1="362" x2="744" y2="380" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah1)"/>
+  <rect x="640" y="382" width="208" height="16" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="744" y="394" text-anchor="middle" font-size="8.5" fill="#c92a2a" font-weight="600">FP8 inplace quant (前448维, block=64) → kv_cache[win:]</text>
+</svg>
+</div>
+
+<h4>HCA 代码分析：Attention.__init__ 中的 Compressor 初始化</h4>
+<pre>
+<span class="file-tag">model.py L453, L464-474 (Attention.__init__)</span>
+self.compress_ratio = args.compress_ratios[layer_id]  <span class="comment"># = 128 for HCA layers</span>
+
+<span class="kw">if</span> self.compress_ratio:
+    <span class="comment"># coff = 1 (无 overlap)，所以 wkv/wgate 输出维 = 1 × head_dim = 512</span>
+    self.compressor = Compressor(args, self.compress_ratio, self.head_dim)
+    <span class="kw">if</span> self.compress_ratio == <span class="num">4</span>:
+        self.indexer = Indexer(args, self.compress_ratio)
+    <span class="kw">else</span>:
+        self.indexer = <span class="kw">None</span>  <span class="comment"># ← HCA: ratio=128, 不创建 Indexer</span>
+
+<span class="comment"># KV 缓存布局: 前 128 槽 = 滑动窗口，后部 = 压缩 KV</span>
+kv_cache_size = args.window_size + args.max_seq_len // self.compress_ratio
+<span class="comment"># = 128 + 1_000_000 // 128 = 128 + 7812 = 7940 slots</span>
+self.register_buffer(<span class="str">"kv_cache"</span>, torch.zeros(args.max_batch_size, kv_cache_size, self.head_dim))
+<span class="comment"># 整个缓存形状: [b, 7940, 512]</span>
+</pre>
+
+<h4>HCA 代码分析：Attention.forward 中的压缩 KV 索引</h4>
+<pre>
+<span class="file-tag">model.py L488-517 (Attention.forward, HCA 路径)</span>
+<span class="comment"># 延迟初始化：Compressor 的 kv_cache 指向主缓存后半段</span>
+<span class="kw">if</span> self.compressor.kv_cache <span class="kw">is</span> <span class="kw">None</span>:
+    self.compressor.kv_cache = self.kv_cache[:, win:]
+    <span class="comment"># win=128, 所以 compressor 写入 kv_cache[:, 128:] (压缩区)</span>
+    self.compressor.freqs_cis = self.freqs_cis
+
+<span class="comment"># 滑动窗口索引 (每层都有)</span>
+topk_idxs = get_window_topk_idxs(win, bsz, seqlen, start_pos)
+<span class="comment"># Prefill: [b, s, s]  (位置 i 看到 max(0, i-127)..i 的索引)</span>
+<span class="comment"># Decode:  [b, 1, 128] (固定看最近 128 个位置)</span>
+
+<span class="kw">if</span> self.compress_ratio:                    <span class="comment"># HCA 层 compress_ratio=128</span>
+    offset = kv.size(1) <span class="kw">if</span> start_pos == <span class="num">0</span> <span class="kw">else</span> win
+    <span class="comment"># Prefill offset = seqlen (原始KV之后)；Decode offset = 128 (滑窗之后)</span>
+
+    <span class="comment"># HCA: 无 Indexer → 静态枚举全部压缩 KV 位置</span>
+    compress_topk_idxs = get_compress_topk_idxs(ratio, bsz, seqlen, start_pos, offset)
+    <span class="comment"># Prefill: [b, s, s//128]  每个 query 看到因果范围内全部压缩块</span>
+    <span class="comment"># Decode:  [b, 1, (pos+1)//128]  ≈ 最多 ~8K 个索引</span>
+
+    topk_idxs = torch.cat([topk_idxs, compress_topk_idxs], dim=-1)
+    <span class="comment"># 合并: [b, s, 128 + (pos+1)//128]  滑窗 + 全量压缩 KV</span>
+
+<span class="comment"># Prefill: 调用 Compressor 生成压缩 KV 并拼接到 kv 张量</span>
+<span class="kw">if</span> start_pos == <span class="num">0</span>:
+    kv_compress = self.compressor(x, start_pos)   <span class="comment"># → [b, s//128, 512]</span>
+    <span class="kw">if</span> kv_compress <span class="kw">is not</span> <span class="kw">None</span>:
+        kv = torch.cat([kv, kv_compress], dim=<span class="num">1</span>)  <span class="comment"># [b, s + s//128, 512]</span>
+    o = sparse_attn(q, kv, self.attn_sink, topk_idxs, self.softmax_scale)
+<span class="kw">else</span>:                                             <span class="comment"># Decode</span>
+    self.compressor(x, start_pos)                  <span class="comment"># 增量更新，不返回值 (见下方 Decode 分析)</span>
+    o = sparse_attn(q, self.kv_cache[:bsz], self.attn_sink, topk_idxs, self.softmax_scale)
+</pre>
+
+<details>
+<summary>HCA Compressor.forward() Prefill 完整代码解读 · model.py L318-377</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L318-377 (Compressor.forward, HCA Prefill)</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, start_pos):
+    bsz, seqlen, _ = x.size()         <span class="comment"># x: <span class="shape">[b, s, 7168]</span></span>
+    ratio = self.compress_ratio        <span class="comment"># = 128</span>
+    overlap = self.overlap             <span class="comment"># = False (ratio≠4)</span>
+    x = x.float()                     <span class="comment"># 压缩计算在 FP32 进行</span>
+
+    kv    = self.wkv(x)               <span class="comment"># <span class="shape">[b, s, 512]</span>  coff=1, 无 overlap</span>
+    score = self.wgate(x)             <span class="comment"># <span class="shape">[b, s, 512]</span></span>
+
+    <span class="comment"># ─── Prefill (start_pos == 0) ───</span>
+    remainder = seqlen % ratio         <span class="comment"># 不能被 128 整除的尾部 token 数</span>
+    cutoff    = seqlen - remainder     <span class="comment"># 可被 128 整除的部分</span>
+
+    <span class="comment"># 尾部 token 写入 kv_state 供后续 decode 继续积累</span>
+    <span class="kw">if</span> remainder > <span class="num">0</span>:
+        self.kv_state[:bsz, :remainder]    = kv[:, cutoff:]
+        self.score_state[:bsz, :remainder] = score[:, cutoff:] + self.ape[:remainder]
+
+    kv    = kv[:, :cutoff].unflatten(<span class="num">1</span>, (-<span class="num">1</span>, ratio))
+    <span class="comment"># <span class="shape">[b, cutoff//128, 128, 512]</span></span>
+    score = score[:, :cutoff].unflatten(<span class="num">1</span>, (-<span class="num">1</span>, ratio)) + self.ape
+    <span class="comment"># self.ape: <span class="shape">[128, 512]</span> → broadcast 到 <span class="shape">[b, cutoff//128, 128, 512]</span></span>
+    <span class="comment"># ape[i] 是窗口内第 i 个位置的可学习偏置，让模型区分池化窗口内的相对位置</span>
+
+    <span class="comment"># HCA 无 overlap_transform (overlap=False)</span>
+
+    kv = (kv * score.softmax(dim=<span class="num">2</span>)).sum(dim=<span class="num">2</span>)
+    <span class="comment"># softmax 在 ratio=128 维上归一化 → 每个 token 的池化权重 <span class="shape">[b, n, 128, 512]</span></span>
+    <span class="comment"># 加权求和 → <span class="shape">[b, n, 512]</span>  每组 128 token 得到 1 条压缩 KV</span>
+
+    kv = self.norm(kv.to(dtype))       <span class="comment"># RMSNorm</span>
+    apply_rotary_emb(kv[..., -<span class="num">64</span>:], freqs_cis)  <span class="comment"># RoPE 应用到后 64 维</span>
+    act_quant(kv[..., :<span class="num">-64</span>], <span class="num">64</span>, scale_fmt, scale_dtype, <span class="kw">True</span>)
+    <span class="comment"># 前 448 维 FP8 inplace 量化 (block_size=64)</span>
+    <span class="comment"># 注: 不用 block_size=128 是因为 448 不能被 128 整除</span>
+
+    self.kv_cache[:bsz, :seqlen // ratio] = kv
+    <span class="comment"># 写入 kv_cache 的压缩区: kv_cache[b, :s//128, 512]</span>
+    <span class="kw">return</span> kv</pre>
+</div>
+</details>
+
+<details>
+<summary>HCA Compressor Decode 增量更新解读 · model.py L342-377</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L342-377 (Compressor.forward, HCA Decode, overlap=False)</span>
+<span class="comment"># Decode: start_pos > 0, 每次只有 1 个 token</span>
+should_compress = (start_pos + <span class="num">1</span>) % self.compress_ratio == <span class="num">0</span>
+<span class="comment"># 每 128 个 decode token 才压缩一次</span>
+
+score += self.ape[start_pos % ratio]
+<span class="comment"># 取 ape 中对应窗口位置 (0~127) 的向量加到分数上</span>
+
+<span class="comment"># 无 overlap 路径：直接写入状态缓冲</span>
+self.kv_state[:bsz,   start_pos % ratio] = kv.squeeze(<span class="num">1</span>)
+self.score_state[:bsz, start_pos % ratio] = score.squeeze(<span class="num">1</span>)
+
+<span class="kw">if</span> should_compress:  <span class="comment"># 积满 128 token → 执行一次压缩</span>
+    kv = (self.kv_state[:bsz] * self.score_state[:bsz].softmax(dim=<span class="num">1</span>)).sum(dim=<span class="num">1</span>, keepdim=<span class="kw">True</span>)
+    <span class="comment"># kv_state: <span class="shape">[b, 128, 512]</span>, softmax 在 128 维度上 → <span class="shape">[b, 1, 512]</span></span>
+
+<span class="kw">if not</span> should_compress:
+    <span class="kw">return</span>  <span class="comment"># 未满 128 token，不产出压缩记录，直接返回 None</span>
+
+<span class="comment"># 后处理：norm → RoPE → FP8 quant → 追加到 kv_cache</span>
+kv = self.norm(kv.to(dtype))
+freqs_cis_here = self.freqs_cis[start_pos + <span class="num">1</span> - self.compress_ratio].unsqueeze(<span class="num">0</span>)
+<span class="comment"># 使用该压缩窗口最后一个 token 的位置编码（代表整个块的位置）</span>
+apply_rotary_emb(kv[..., -<span class="num">64</span>:], freqs_cis_here)
+act_quant(kv[..., :<span class="num">-64</span>], <span class="num">64</span>, ..., <span class="kw">True</span>)
+self.kv_cache[:bsz, start_pos // ratio] = kv.squeeze(<span class="num">1</span>)
+<span class="comment"># 写入 kv_cache[win + pos//128]，追加到压缩区末尾</span></pre>
+</div>
+</details>
+
+<!-- ==================== CSA DETAILED ==================== -->
+<h3 id="csa-design">CSA 模块设计详解 (ratio=4)</h3>
+<p>
+  CSA (Compressed Sparse Attention) 将每 4 个 token 压缩为 1 条 KV 记录，
+  但通过 <b>Indexer</b> 只选取最相关的 top-k=1024 条——"Sparse" 来自这里。
+  与 HCA 的最大区别有两点：
+  <br>① <b>Overlap 压缩</b>：Compressor 的 <code>wkv</code>/<code>wgate</code> 输出 2× 维度（coff=2），
+  借助 <code>overlap_transform</code> 让每个压缩窗口感知前后 8 个 token，平滑边界处的信息断裂。
+  <br>② <b>Indexer 打分</b>：Indexer 拥有独立的 Compressor（头维 128，使用 Hadamard+FP4），
+  对全部压缩 KV 进行轻量打分，按照当前 query 的相关性选出 top-k=1024 个位置。
+  <br><b>源码：</b><code>model.py</code> Attention L436 + Compressor L283（<code>compress_ratio=4</code>, <code>overlap=True</code>, <code>coff=2</code>）+ Indexer L382。
+</p>
+
+<h4>CSA 完整参数表</h4>
+<table class="config-table">
+<thead><tr><th>模块 · 参数</th><th>形状 / 类型</th><th>说明</th><th>model.py</th></tr></thead>
+<tbody>
+<tr><td class="key" colspan="4" style="background:var(--accent-light);color:var(--accent);font-size:11px;letter-spacing:.5px">Attention 基础参数（同 HCA）</td></tr>
+<tr><td class="key">wq_a / q_norm / wq_b</td><td class="val">7168→1536→128×512</td><td>Q 路径（与 HCA 完全相同）</td><td>L457-459</td></tr>
+<tr><td class="key">wkv / kv_norm</td><td class="val">Linear(7168→512)</td><td>主 KV 投影（单头联合 latent）</td><td>L460-461</td></tr>
+<tr><td class="key" colspan="4" style="background:var(--accent-light);color:var(--accent);font-size:11px;letter-spacing:.5px">CSA Compressor（ratio=4, overlap=True, coff=2）</td></tr>
+<tr><td class="key">compressor.wkv</td><td class="val">Linear(7168 → 1024) FP32</td><td>coff=2 → 输出 2×512；前 512 = overlap 槽，后 512 = 当前窗口槽</td><td>L296</td></tr>
+<tr><td class="key">compressor.wgate</td><td class="val">Linear(7168 → 1024) FP32</td><td>门控分数投影，同样 coff=2</td><td>L297</td></tr>
+<tr><td class="key">compressor.ape</td><td class="val">Parameter(4, 1024) FP32</td><td>窗口内 4 个位置的可学习编码（1024 = 2×512）</td><td>L294</td></tr>
+<tr><td class="key">compressor.kv_state</td><td class="val">[b, 2×4, 1024] FP32</td><td>Decode 缓冲：前 4 行 = overlap 区（上一窗口），后 4 行 = 当前窗口</td><td>L303</td></tr>
+<tr><td class="key">compressor.score_state</td><td class="val">[b, 8, 1024] FP32</td><td>对应的门控分数缓冲</td><td>L304</td></tr>
+<tr><td class="key">indexer</td><td class="val">Indexer(ratio=4)</td><td>CSA 专属，负责 top-k=1024 稀疏选择</td><td>L468-469</td></tr>
+<tr><td class="key" colspan="4" style="background:var(--accent-light);color:var(--accent);font-size:11px;letter-spacing:.5px">Indexer（ratio=4, index_head_dim=128, index_n_heads=64）</td></tr>
+<tr><td class="key">indexer.wq_b</td><td class="val">ColParallel(1536 → 64×128)</td><td>索引用 Q 投影（head_dim=128，比主注意力的 512 轻量 4×）</td><td>L393</td></tr>
+<tr><td class="key">indexer.weights_proj</td><td class="val">ColParallel(7168 → 64) BF16</td><td>per-head 重要性权重投影</td><td>L394</td></tr>
+<tr><td class="key">indexer.compressor</td><td class="val">Compressor(ratio=4, head_dim=128, rotate=True)</td><td>独立 Compressor：FP4+Hadamard；wkv/wgate=(7168→256), ape=(4,256)</td><td>L398</td></tr>
+<tr><td class="key">indexer.kv_cache</td><td class="val">[b, max_len//4, 128]</td><td>Indexer 专用压缩缓存（128 维，独立于主注意力的 512 维缓存）</td><td>L399</td></tr>
+</tbody>
+</table>
+
+<!-- CSA Overlap Mechanism Diagram -->
+<h4>CSA Overlap 机制图解</h4>
+<div class="diagram-container">
+<svg viewBox="0 0 800 460" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;">
+  <defs><marker id="ah2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="400" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">CSA Compressor：Overlap 机制与门控池化（ratio=4）</text>
+
+  <!-- wkv output explanation -->
+  <text x="20" y="50" font-size="11" font-weight="700" fill="var(--text)">① wkv 输出 coff=2 倍维度（1024 = 2×512）：前半 = overlap 槽，后半 = 当前窗口槽</text>
+
+  <!-- Token sequence -->
+  <text x="20" y="80" font-size="10" fill="var(--text-secondary)">token 序列（按窗口分组，每组 4 个）：</text>
+  <!-- Window i-1 -->
+  <rect x="20" y="88" width="200" height="28" rx="4" fill="#dbe4ff" stroke="#4263eb" stroke-width="1.2"/>
+  <text x="120" y="106" text-anchor="middle" font-size="10" font-weight="600" fill="#4263eb">窗口 i-1:  t₀ t₁ t₂ t₃</text>
+  <!-- Window i -->
+  <rect x="230" y="88" width="200" height="28" rx="4" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1.2"/>
+  <text x="330" y="106" text-anchor="middle" font-size="10" font-weight="600" fill="#2b8a3e">窗口 i:    t₄ t₅ t₆ t₇</text>
+  <!-- Window i+1 -->
+  <rect x="440" y="88" width="200" height="28" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1.2"/>
+  <text x="540" y="106" text-anchor="middle" font-size="10" font-weight="600" fill="#e67700">窗口 i+1:  t₈ t₉ t₁₀ t₁₁</text>
+
+  <!-- After wkv -->
+  <text x="20" y="138" font-size="10" fill="var(--text-secondary)">② wkv(x) 输出 [b,s,1024]：每个 token 得到 1024 维向量，前 512 维为 overlap 信息，后 512 维为当前信息</text>
+
+  <!-- unflatten -->
+  <text x="20" y="166" font-size="10" fill="var(--text-secondary)">③ unflatten(1, (-1, 4)) → [b, n, 4, 1024]，再 + ape[4, 1024]（广播）</text>
+
+  <!-- overlap_transform explanation -->
+  <text x="20" y="196" font-size="11" font-weight="700" fill="var(--text)">④ overlap_transform：重新拼接为 [b, n, 8, 512]  — 每个压缩窗口"感知" 8 个 token</text>
+
+  <!-- Before overlap_transform -->
+  <rect x="20" y="208" width="350" height="80" rx="4" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="195" y="226" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">变换前：窗口 i 的数据 [4, 1024]</text>
+  <!-- 4 rows, split into first/second half -->
+  <rect x="30" y="234" width="72" height="18" rx="2" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="66" y="247" text-anchor="middle" font-size="8" fill="#4263eb">前512维(overlap)</text>
+  <rect x="108" y="234" width="72" height="18" rx="2" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="144" y="247" text-anchor="middle" font-size="8" fill="#2b8a3e">后512维(current)</text>
+  <text x="186" y="247" font-size="8" fill="var(--text-muted)">← pos 0</text>
+  <rect x="30" y="256" width="72" height="18" rx="2" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <rect x="108" y="256" width="72" height="18" rx="2" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="186" y="269" font-size="8" fill="var(--text-muted)">← pos 1</text>
+  <rect x="30" y="278" width="72" height="14" rx="2" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="66" y="290" text-anchor="middle" font-size="7" fill="var(--text-muted)">pos 2,3 ...</text>
+
+  <!-- Arrow -->
+  <line x1="375" y1="248" x2="415" y2="248" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ah2)"/>
+  <text x="395" y="242" text-anchor="middle" font-size="9" fill="var(--accent)">overlap</text>
+  <text x="395" y="254" text-anchor="middle" font-size="9" fill="var(--accent)">_transform</text>
+
+  <!-- After overlap_transform -->
+  <rect x="420" y="208" width="360" height="80" rx="4" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="600" y="226" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">变换后：窗口 i 的有效输入 [8, 512]</text>
+  <!-- 8 rows with labels -->
+  <rect x="430" y="234" width="130" height="13" rx="2" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="495" y="244" text-anchor="middle" font-size="8" fill="#4263eb">slots 0-3: 窗口 i-1 的 overlap 前缀</text>
+  <rect x="430" y="250" width="130" height="13" rx="2" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="495" y="260" text-anchor="middle" font-size="8" fill="#2b8a3e">slots 4-7: 窗口 i 本身的 KV</text>
+  <text x="565" y="244" font-size="8" fill="var(--text-muted)">← tensor[:, :-1, :, :d] (上一 unflatten 块前半)</text>
+  <text x="565" y="260" font-size="8" fill="var(--text-muted)">← tensor[:, :, :, d:] (当前 unflatten 块后半)</text>
+  <text x="600" y="282" text-anchor="middle" font-size="8" fill="var(--text-muted)">→ 每个压缩记录"看到"前后各 4 个 token，消除硬边界</text>
+
+  <!-- Gated pooling over 8 -->
+  <text x="20" y="316" font-size="11" font-weight="700" fill="var(--text)">⑤ 对 8-slot 窗口做 softmax 门控池化，压缩为 1 条记录</text>
+  <rect x="180" y="326" width="440" height="36" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="400" y="344" text-anchor="middle" font-size="11" font-weight="700" fill="var(--success)">compressed_kv_i = Σⱼ∈[0,8) softmax_j(score_ij) · kv_ij</text>
+  <text x="400" y="358" text-anchor="middle" font-size="9" fill="var(--text-muted)">kv/score 均已经过 overlap_transform → [b, n, 8, 512]；softmax 在 j 维上</text>
+
+  <!-- Result -->
+  <line x1="400" y1="362" x2="400" y2="382" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah2)"/>
+  <rect x="250" y="384" width="300" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="400" y="401" text-anchor="middle" font-size="9" fill="var(--text)">compressed_kv <tspan fill="var(--shape-color)">[b, n, 512]</tspan>  <tspan fill="var(--text-muted)">n = s//4，约 256K (1M ctx)</tspan></text>
+
+  <!-- Post chain -->
+  <line x1="550" y1="397" x2="598" y2="397" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#ah2)"/>
+  <rect x="600" y="384" width="180" height="26" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="690" y="397" text-anchor="middle" font-size="8.5" fill="#c92a2a" font-weight="600">norm → RoPE → FP8 quant → kv_cache[win:]</text>
+</svg>
+</div>
+
+<h4>CSA 代码分析：overlap_transform 实现详解</h4>
+<pre>
+<span class="file-tag">model.py L309-315 (Compressor.overlap_transform)</span>
+<span class="kw">def</span> <span class="fn">overlap_transform</span>(self, tensor, value=<span class="num">0</span>):
+    <span class="comment"># tensor: [b, n, ratio, 2*head_dim]  即 [b, n, 4, 1024]</span>
+    b, n, _, _ = tensor.size()
+    ratio, d = self.compress_ratio, self.head_dim  <span class="comment"># ratio=4, d=512</span>
+
+    new_tensor = tensor.new_full((b, n, <span class="num">2</span>*ratio, d), value)
+    <span class="comment"># 输出形状: [b, n, 8, 512]</span>
+
+    <span class="comment"># slots 4-7（当前窗口）= tensor 的后 512 维（second half）</span>
+    new_tensor[:, :, ratio:] = tensor[:, :, :, d:]
+    <span class="comment"># tensor[:, :, :, d:] → [b, n, 4, 512]  每个 token 的"当前槽"</span>
+
+    <span class="comment"># slots 0-3（前一窗口 overlap）= 前一 unflatten 块的前 512 维</span>
+    new_tensor[:, <span class="num">1</span>:, :ratio] = tensor[:, :-<span class="num">1</span>, :, :d]
+    <span class="comment"># tensor[:, :-1, :, :d] → [b, n-1, 4, 512]  每个 chunk 的"overlap 槽"</span>
+    <span class="comment"># 注: 第一个 chunk (n=0) 的 slots 0-3 保持 value (0 for kv, -inf for score)</span>
+    <span class="comment"># 这使得第一个压缩块仅使用自身的 4 个 token，无 overlap 填充</span>
+
+    <span class="kw">return</span> new_tensor  <span class="comment"># [b, n, 8, 512]</span>
+
+<span class="comment"># 关键理解：</span>
+<span class="comment"># wkv 输出 [b,s,1024]，前 512 维是该 token 作为"上一窗口边界信息"写入 overlap 槽</span>
+<span class="comment"># 后 512 维是该 token 作为"当前窗口成员"写入当前槽</span>
+<span class="comment"># 两路投影共享同一个 Linear，但感受野（slot 身份）不同，因此网络可以学习两种不同的压缩角色</span>
+</pre>
+
+<h4>CSA 代码分析：Indexer 如何与 CSA 协同工作</h4>
+<pre>
+<span class="file-tag">model.py L508-514 (Attention.forward, CSA 路径)</span>
+<span class="comment"># CSA 层 compress_ratio=4，indexer != None</span>
+offset = kv.size(<span class="num">1</span>) <span class="kw">if</span> start_pos == <span class="num">0</span> <span class="kw">else</span> win
+<span class="comment"># Prefill offset: 原始 KV 序列长度 (s)；Decode offset: 128 (滑窗尾)</span>
+
+compress_topk_idxs = self.indexer(x, qr, start_pos, offset)
+<span class="comment"># 输入:</span>
+<span class="comment">#   x:   <span class="shape">[b, s, 7168]</span>  原始 token 表示</span>
+<span class="comment">#   qr:  <span class="shape">[b, s, 1536]</span>  来自主 Attention 的 Q 低秩中间结果（wq_a + q_norm 之后）</span>
+<span class="comment">#   offset: 压缩 KV 在 kv_cache 中的起始位置偏移</span>
+<span class="comment"># 输出: <span class="shape">[b, s, min(1024, n_compressed)]</span>  top-k 选出的压缩 KV 位置索引</span>
+
+topk_idxs = torch.cat([topk_idxs, compress_topk_idxs], dim=-<span class="num">1</span>)
+<span class="comment"># 合并: [b, s, 128 + 1024]  滑窗 128 + 稀疏选中的压缩 KV 1024</span>
+<span class="comment"># sparse_attn 只需计算这 1152 个位置，而非全部 ~256K 压缩 KV</span>
+</pre>
+
+<details>
+<summary>CSA Compressor Decode 路径 (overlap=True) · model.py L351-375</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L351-375 (Compressor.forward, CSA Decode, overlap=True)</span>
+<span class="comment"># Decode: start_pos > 0, 每次一个 token</span>
+should_compress = (start_pos + <span class="num">1</span>) % <span class="num">4</span> == <span class="num">0</span>  <span class="comment"># 每 4 个 token 压缩一次</span>
+score += self.ape[start_pos % <span class="num">4</span>]             <span class="comment"># 取 ape[0]~ape[3] 之一</span>
+
+<span class="comment"># overlap 路径: kv_state 双区域布局</span>
+<span class="comment"># kv_state[:, :4] = overlap 区（上一个窗口的前半 KV）</span>
+<span class="comment"># kv_state[:, 4:] = 当前窗口区（当前 4 个 token 的 KV）</span>
+self.kv_state[:bsz,   <span class="num">4</span> + start_pos % <span class="num">4</span>] = kv.squeeze(<span class="num">1</span>)
+self.score_state[:bsz, <span class="num">4</span> + start_pos % <span class="num">4</span>] = score.squeeze(<span class="num">1</span>)
+
+<span class="kw">if</span> should_compress:  <span class="comment"># 每 4 个 decode token 触发一次压缩</span>
+    <span class="comment"># 合并 overlap（前区）+ 当前窗口（后区），等效于 overlap_transform</span>
+    kv_state = torch.cat([
+        self.kv_state[:bsz, :<span class="num">4</span>, :d],    <span class="comment"># overlap 部分的前 512 维</span>
+        self.kv_state[:bsz, <span class="num">4</span>:, d:]     <span class="comment"># 当前窗口的后 512 维</span>
+    ], dim=<span class="num">1</span>)                            <span class="comment"># → <span class="shape">[b, 8, 512]</span></span>
+    score_state = torch.cat([...])       <span class="comment"># 同理</span>
+
+    kv = (kv_state * score_state.softmax(dim=<span class="num">1</span>)).sum(dim=<span class="num">1</span>, keepdim=<span class="kw">True</span>)
+    <span class="comment"># 对 8-slot 窗口做门控池化 → <span class="shape">[b, 1, 512]</span></span>
+
+    <span class="comment"># 滑动：当前窗口（后区）成为下一次的 overlap（前区）</span>
+    self.kv_state[:bsz,   :<span class="num">4</span>] = self.kv_state[:bsz,   <span class="num">4</span>:]
+    self.score_state[:bsz, :<span class="num">4</span>] = self.score_state[:bsz, <span class="num">4</span>:]
+
+    <span class="comment"># 后处理：norm → RoPE → FP8 → 写入 kv_cache</span>
+    kv = self.norm(kv.to(dtype))
+    apply_rotary_emb(kv[..., -<span class="num">64</span>:], freqs_cis[start_pos - <span class="num">3</span>].unsqueeze(<span class="num">0</span>))
+    act_quant(kv[..., :<span class="num">-64</span>], <span class="num">64</span>, ..., <span class="kw">True</span>)
+    self.kv_cache[:bsz, start_pos // <span class="num">4</span>] = kv.squeeze(<span class="num">1</span>)</pre>
+</div>
+</details>
+
+<!-- ==================== COMPRESSION MATH ==================== -->
+<h3 id="compress-math">门控池化机制：数学推导与 APE 设计</h3>
+
+<div class="info-box">
+  <strong>门控池化核心公式：</strong><br>
+  设窗口内 <em>r</em> 个 token 的原始表示为 <b>x</b>₀,…,<b>x</b>ᵣ₋₁，对于 HCA <em>r</em>=128，CSA <em>r</em>=4 (或 overlap 后 8)：
+  <br><br>
+  <code>kv_raw_i  = W_kv · x_i</code>　（Linear 投影，FP32）<br>
+  <code>gate_i    = W_gate · x_i + ape_i</code>　（加入可学习位置偏置 ape[i]）<br>
+  <code>weight_i  = softmax({gate_j}_{j=0}^{r-1})_i</code>　（在 r 个位置上 softmax）<br>
+  <code>kv_compressed = Σᵢ weight_i ⊙ kv_raw_i</code>　（按元素加权求和）<br>
+  <br>
+  <b>APE（Absolute Position Encoding）</b> 的作用：
+  <code>ape[i]</code> ∈ ℝ⁵¹² 是第 <em>i</em> 个窗口位置的独立可学习向量，类似于传统绝对位置编码。
+  它让门控网络"知道"每个 token 在窗口内的相对位置，使得窗口边界（如首尾 token）可以
+  获得特殊的权重偏置，而不是所有位置都平等竞争。
+  <br><br>
+  <b>与 Cross-Attention 的对比：</b> 这相当于以 gate(x_i) 为 score、kv_raw(x_i) 为 value 做 self-pooling，
+  且 key 和 value 来自同一映射（<code>wkv</code>）。门控的 softmax 保证权重和为 1，输出为 kv_raw 的凸组合。
+</div>
+
+<!-- APE + Gated Pooling visual -->
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;">
+  <defs><marker id="ah3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="390" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="var(--text)">APE 可学习位置编码：让门控感知窗口内位置</text>
+
+  <!-- Token positions in window -->
+  <text x="30" y="48" font-size="10" fill="var(--text-secondary)">HCA 窗口（128个token）：</text>
+  <rect x="30" y="54" width="30" height="26" rx="3" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="45" y="71" text-anchor="middle" font-size="9" fill="#4263eb">t₀</text>
+  <rect x="66" y="54" width="30" height="26" rx="3" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="81" y="71" text-anchor="middle" font-size="9" fill="#2b8a3e">t₁</text>
+  <text x="108" y="71" font-size="9" fill="var(--text-muted)">···</text>
+  <rect x="130" y="54" width="30" height="26" rx="3" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="145" y="71" text-anchor="middle" font-size="9" fill="#e67700">t₁₂₇</text>
+
+  <!-- APE vectors -->
+  <text x="30" y="106" font-size="10" fill="var(--text-secondary)">ape 参数（每个位置一个 512 维可学习向量）：</text>
+  <rect x="30" y="112" width="30" height="26" rx="3" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="45" y="124" text-anchor="middle" font-size="8" fill="#4263eb">ape[0]</text>
+  <text x="45" y="134" text-anchor="middle" font-size="7" fill="var(--text-muted)">512-dim</text>
+  <rect x="66" y="112" width="30" height="26" rx="3" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="81" y="124" text-anchor="middle" font-size="8" fill="#2b8a3e">ape[1]</text>
+  <text x="108" y="124" font-size="9" fill="var(--text-muted)">···</text>
+  <rect x="130" y="112" width="30" height="26" rx="3" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="145" y="124" text-anchor="middle" font-size="8" fill="#e67700">ape[127]</text>
+
+  <!-- Addition -->
+  <text x="200" y="106" font-size="10" fill="var(--text-secondary)">gate score 计算：</text>
+  <rect x="200" y="54" width="220" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="310" y="71" text-anchor="middle" font-size="9" fill="var(--text)">score_i = W_gate(x_i) + ape[i]</text>
+  <rect x="200" y="86" width="220" height="26" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="310" y="103" text-anchor="middle" font-size="9" fill="var(--text)">w_i = softmax(score_0,...,score_r-1)_i</text>
+  <rect x="200" y="118" width="220" height="26" rx="4" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.2"/>
+  <text x="310" y="131" text-anchor="middle" font-size="9" font-weight="600" fill="var(--success)">output = Σᵢ w_i · W_kv(x_i)</text>
+
+  <!-- Key insight box -->
+  <rect x="460" y="40" width="300" height="120" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="610" y="62" text-anchor="middle" font-size="10" font-weight="700" fill="var(--text)">APE 解决的问题</text>
+  <text x="470" y="80" font-size="9" fill="var(--text-secondary)">• 无 APE：窗口内 128 个位置完全竞争，</text>
+  <text x="470" y="94" font-size="9" fill="var(--text-secondary)">  网络无法区分"这是窗口边界 token"</text>
+  <text x="470" y="112" font-size="9" fill="var(--text-secondary)">• 有 APE：每个位置有固定的先验偏置，</text>
+  <text x="470" y="126" font-size="9" fill="var(--text-secondary)">  边界位置（ape[0], ape[127]）可以学习</text>
+  <text x="470" y="140" font-size="9" fill="var(--text-secondary)">  特殊角色（如"窗口开始标记"）</text>
+
+  <!-- Quantization chain -->
+  <text x="30" y="175" font-size="11" font-weight="700" fill="var(--text)">压缩后量化策略（主 Compressor vs Indexer Compressor）</text>
+  <!-- Main compressor -->
+  <rect x="30" y="184" width="330" height="70" rx="4" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="195" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">主 Compressor (rotate=False)</text>
+  <text x="40" y="218" font-size="9" fill="var(--text-secondary)">后 64 维 (RoPE 维): BF16，保留精确位置信息</text>
+  <text x="40" y="232" font-size="9" fill="var(--text-secondary)">前 448 维 (NoPE 维): FP8 inplace quant (block=64)</text>
+  <text x="40" y="246" font-size="9" fill="var(--text-secondary)">目的: 主注意力计算 → 精度要求高 → FP8 足够</text>
+  <!-- Indexer compressor -->
+  <rect x="380" y="184" width="370" height="70" rx="4" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="565" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">Indexer Compressor (rotate=True, head_dim=128)</text>
+  <text x="390" y="218" font-size="9" fill="var(--text-secondary)">后 64 维 (RoPE 维): BF16，RoPE 后做 Hadamard 旋转</text>
+  <text x="390" y="232" font-size="9" fill="var(--text-secondary)">全部维度: Hadamard 旋转 → FP4 inplace quant (block=32)</text>
+  <text x="390" y="246" font-size="9" fill="var(--text-secondary)">目的: 打分用 → 仅需相对大小 → FP4 + 旋转消除稀疏误差</text>
+</svg>
+</div>
+
+<h4 id="attn-hca-csa">HCA vs CSA 对比总结</h4>
+<table class="config-table">
+<thead><tr><th>特性</th><th>HCA (ratio=128)</th><th>CSA (ratio=4)</th></tr></thead>
+<tbody>
+<tr><td class="key">compress_ratio</td><td class="val">128</td><td class="val">4</td></tr>
+<tr><td class="key">1M token 压缩 KV 数</td><td class="val">~8K</td><td class="val">~256K</td></tr>
+<tr><td class="key">KV 选择策略</td><td>静态全量 (get_compress_topk_idxs)</td><td>学习型 top-k=1024 (Indexer)</td></tr>
+<tr><td class="key">Indexer</td><td class="val">无</td><td class="val">有 (独立 Compressor + Q 投影 + 打分)</td></tr>
+<tr><td class="key">Overlap 压缩</td><td class="val">否</td><td class="val">是 (2×ratio=8 窗口)</td></tr>
+<tr><td class="key">KV 非RoPE 量化</td><td>FP8 (block=64)</td><td>FP8 (block=64)</td></tr>
+<tr><td class="key">Indexer KV 量化</td><td>—</td><td>Hadamard + FP4</td></tr>
+<tr><td class="key">注意力的 KV 数/query</td><td>128 (滑窗) + ~8K (全压缩)</td><td>128 (滑窗) + 1024 (稀疏选择)</td></tr>
+<tr><td class="key">层数 (61层中)</td><td class="val">31 层</td><td class="val">30 层</td></tr>
+<tr><td class="key">RoPE</td><td>YaRN (theta=160K, factor=16)</td><td>YaRN (theta=160K, factor=16)</td></tr>
+</tbody>
+</table>
+
+<div class="info-box">
+  <strong>1M 上下文效率：</strong>
+  HCA 将 1M token 压缩为 ~8K 条目，全量访问压缩 KV — 粗粒度但完整的远程信息。
+  CSA 将 1M token 压缩为 ~256K 条目，但用 Indexer 仅选择 1024 条 — 细粒度且精准的远程信息。
+  两种策略交替使用，在<b>低 KV 缓存开销</b>和<b>信息完整性</b>之间取得平衡。
+  再加上所有层共享的 128-token 滑动窗口保证局部信息无损，构成完整的混合注意力架构。
+  <br><br>
+  <b>注意：</b><code>num_hash_layers=3</code> 表示前 3 层（Layer 0-2）的 MoE 使用哈希路由，这是路由策略而非注意力类型。
+  哈希路由层的 compress_ratio 分别是 128、128、4。
+</div>
+
+<h3 id="attn-qpath">Attention Forward 数据流</h3>
+<p><b>源码位置：</b><code>model.py</code> Attention 类 (L436-543)</p>
+
+<!-- Attention Dataflow SVG -->
+<div class="diagram-container">
+<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;">
+  <defs><marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">Hybrid Attention 数据流 (HCA / CSA 共用路径)</text>
+
+  <!-- Input x -->
+  <rect x="330" y="36" width="140" height="28" rx="14" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="400" y="54" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">x [b, s, 7168]</text>
+
+  <!-- Q Path -->
+  <rect x="30" y="90" width="220" height="26" rx="4" fill="#dbe4ff" stroke="#4263eb" stroke-width="1.2"/>
+  <text x="140" y="107" text-anchor="middle" font-size="10" font-weight="600" fill="#4263eb">Q 路径</text>
+
+  <rect x="30" y="124" width="100" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="80" y="140" text-anchor="middle" font-size="9" fill="var(--text)">wq_a (Linear)</text>
+  <text x="80" y="156" font-size="8" fill="var(--text-muted)" text-anchor="middle">7168→1536</text>
+
+  <rect x="140" y="124" width="60" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="170" y="140" text-anchor="middle" font-size="9" fill="var(--text)">q_norm</text>
+
+  <rect x="210" y="124" width="100" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="260" y="140" text-anchor="middle" font-size="9" fill="var(--text)">wq_b (ColPar)</text>
+  <text x="260" y="156" font-size="8" fill="var(--text-muted)" text-anchor="middle">1536→128×512</text>
+
+  <line x1="130" y1="136" x2="138" y2="136" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="200" y1="136" x2="208" y2="136" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <rect x="30" y="168" width="100" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="80" y="184" text-anchor="middle" font-size="9" fill="var(--text)">unflatten</text>
+  <text x="80" y="200" font-size="8" fill="var(--shape-color)" text-anchor="middle">[b,s,128,512]</text>
+
+  <rect x="140" y="168" width="80" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="180" y="184" text-anchor="middle" font-size="9" fill="var(--text)">Q-RMSNorm</text>
+
+  <rect x="230" y="168" width="80" height="24" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="270" y="184" text-anchor="middle" font-size="9" fill="#e67700" font-weight="600">RoPE</text>
+  <text x="270" y="200" font-size="8" fill="var(--text-muted)" text-anchor="middle">仅后64维</text>
+
+  <line x1="130" y1="180" x2="138" y2="180" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="220" y1="180" x2="228" y2="180" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- KV Path -->
+  <rect x="370" y="90" width="220" height="26" rx="4" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1.2"/>
+  <text x="480" y="107" text-anchor="middle" font-size="10" font-weight="600" fill="#2b8a3e">KV 路径 (单头共享)</text>
+
+  <rect x="370" y="124" width="100" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="420" y="140" text-anchor="middle" font-size="9" fill="var(--text)">wkv (Linear)</text>
+  <text x="420" y="156" font-size="8" fill="var(--text-muted)" text-anchor="middle">7168→512</text>
+
+  <rect x="480" y="124" width="60" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="510" y="140" text-anchor="middle" font-size="9" fill="var(--text)">kv_norm</text>
+
+  <rect x="550" y="124" width="60" height="24" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="580" y="140" text-anchor="middle" font-size="9" fill="#e67700" font-weight="600">RoPE</text>
+
+  <line x1="470" y1="136" x2="478" y2="136" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="540" y1="136" x2="548" y2="136" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <rect x="370" y="168" width="120" height="24" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="430" y="184" text-anchor="middle" font-size="9" fill="#c92a2a" font-weight="600">FP8 量化 (非RoPE)</text>
+  <text x="430" y="200" font-size="8" fill="var(--text-muted)" text-anchor="middle">前448维 inplace quant</text>
+
+  <rect x="510" y="168" width="100" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="560" y="184" text-anchor="middle" font-size="9" fill="var(--text)">→ KV Cache</text>
+  <text x="560" y="200" font-size="8" fill="var(--shape-color)" text-anchor="middle">[b, win+comp, 512]</text>
+
+  <line x1="490" y1="180" x2="508" y2="180" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- Compressor -->
+  <rect x="620" y="90" width="160" height="26" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1.2"/>
+  <text x="700" y="107" text-anchor="middle" font-size="10" font-weight="600" fill="#c92a2a">Compressor (如有)</text>
+
+  <rect x="630" y="124" width="140" height="40" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="700" y="140" text-anchor="middle" font-size="9" fill="var(--text)">x → 门控池化压缩</text>
+  <text x="700" y="156" text-anchor="middle" font-size="8" fill="var(--text-muted)">ratio=4: overlap窗口</text>
+  <text x="700" y="168" font-size="8" fill="var(--text-muted)" text-anchor="middle">ratio=128: 直接池化</text>
+
+  <!-- Topk Indices -->
+  <rect x="620" y="180" width="160" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="700" y="196" text-anchor="middle" font-size="9" fill="var(--text)">topk_idxs (窗口+压缩)</text>
+
+  <!-- Sparse Attention -->
+  <rect x="180" y="240" width="440" height="50" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="400" y="260" text-anchor="middle" font-size="12" font-weight="700" fill="var(--success)">sparse_attn(q, kv_cache, attn_sink, topk_idxs)</text>
+  <text x="400" y="278" text-anchor="middle" font-size="9" fill="var(--text-muted)">FlashAttention 风格在线 softmax · Top-k 稀疏 KV 索引 · 可学习 attention sink</text>
+
+  <line x1="270" y1="200" x2="320" y2="238" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="560" y1="200" x2="480" y2="238" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="700" y1="204" x2="580" y2="238" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- De-rotate -->
+  <rect x="310" y="310" width="180" height="24" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="400" y="326" text-anchor="middle" font-size="9" fill="#e67700" font-weight="600">apply_rotary_emb(inverse=True)</text>
+  <line x1="400" y1="290" x2="400" y2="308" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- O Path -->
+  <rect x="170" y="358" width="460" height="26" rx="4" fill="#e8d5f5" stroke="var(--purple)" stroke-width="1.2"/>
+  <text x="400" y="375" text-anchor="middle" font-size="10" font-weight="600" fill="var(--purple)">O 路径 — 分组低秩输出投影</text>
+  <line x1="400" y1="334" x2="400" y2="356" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <rect x="170" y="392" width="140" height="28" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="240" y="407" text-anchor="middle" font-size="9" fill="var(--text)">view → [b,s,16组,grp_d]</text>
+  <text x="240" y="420" text-anchor="middle" font-size="8" fill="var(--shape-color)">16组×8头=128头</text>
+
+  <rect x="330" y="392" width="140" height="28" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="400" y="407" text-anchor="middle" font-size="9" fill="var(--text)">einsum(wo_a)</text>
+  <text x="400" y="420" text-anchor="middle" font-size="8" fill="var(--text-muted)">grp_d → 1024 per group</text>
+
+  <rect x="490" y="392" width="140" height="28" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="560" y="407" text-anchor="middle" font-size="9" fill="var(--text)">wo_b (RowPar)</text>
+  <text x="560" y="420" text-anchor="middle" font-size="8" fill="var(--text-muted)">16×1024 → 7168</text>
+
+  <line x1="310" y1="406" x2="328" y2="406" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+  <line x1="470" y1="406" x2="488" y2="406" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- Output -->
+  <rect x="330" y="445" width="140" height="28" rx="14" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="400" y="463" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">output [b, s, 7168]</text>
+  <line x1="560" y1="420" x2="470" y2="443" stroke="var(--accent)" stroke-width="1" marker-end="url(#a3)"/>
+
+  <!-- Labels -->
+  <text x="80" y="240" font-size="9" fill="var(--shape-color)" font-weight="600">q: [b,s,128,512]</text>
+  <text x="560" y="240" font-size="9" fill="var(--shape-color)" font-weight="600">kv: [b,n,512]</text>
+</svg>
+</div>
+
+<details>
+<summary>Attention.forward() 完整代码解读 · model.py L484-543</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L484-543</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, start_pos):
+    bsz, seqlen, _ = x.size()     <span class="comment"># x: <span class="shape">[b, s, 7168]</span> <span class="dtype">BF16</span></span>
+    freqs_cis = self.freqs_cis[start_pos:start_pos+seqlen]
+    win, ratio, rd = self.window_size, self.compress_ratio, self.rope_head_dim
+    <span class="comment"># win=128, ratio∈{0,4,128}, rd=64</span>
+
+    <span class="comment"># ─── 初始化: Compressor 的 kv_cache 指向主缓存的后半 ───</span>
+    <span class="kw">if</span> self.compress_ratio <span class="kw">and</span> self.compressor.kv_cache <span class="kw">is</span> None:
+        self.compressor.kv_cache = self.kv_cache[:, win:]  <span class="comment"># 共享缓存!</span>
+        self.compressor.freqs_cis = self.freqs_cis
+        <span class="kw">if</span> self.indexer: self.indexer.freqs_cis = self.freqs_cis
+
+    <span class="comment"># ─── Q 路径 ───</span>
+    qr = q = self.q_norm(self.wq_a(x))       <span class="comment"># <span class="shape">[b, s, 1536]</span> ← 低秩投影+归一化</span>
+    <span class="comment"># qr 保存中间结果, 供 Indexer 复用 (避免重复计算)</span>
+    q = self.wq_b(q).unflatten(-1, (self.n_local_heads, self.head_dim))
+                                               <span class="comment"># <span class="shape">[b, s, 128/TP, 512]</span> ← 上投影+reshape</span>
+    q *= torch.rsqrt(q.square().mean(-1, keepdim=True) + self.eps)
+                                               <span class="comment"># Q-RMSNorm (per-head 归一化, 稳定训练)</span>
+    apply_rotary_emb(q[..., -rd:], freqs_cis)  <span class="comment"># 仅后64维应用RoPE (原位)</span>
+
+    <span class="comment"># ─── KV 路径 ───</span>
+    kv = self.wkv(x)                           <span class="comment"># <span class="shape">[b, s, 512]</span> ← 单头KV投影</span>
+    kv = self.kv_norm(kv)                      <span class="comment"># RMSNorm</span>
+    apply_rotary_emb(kv[..., -rd:], freqs_cis) <span class="comment"># 仅后64维RoPE</span>
+    act_quant(kv[..., :-rd], 64, ..., True)    <span class="comment"># 前448维FP8 inplace (QAT噪声模拟)</span>
+    <span class="comment"># 注: 这里block_size=64, 不是默认128, 因为448维不能被128整除</span>
+
+    <span class="comment"># ─── TopK 索引构建 ───</span>
+    topk_idxs = get_window_topk_idxs(win, bsz, seqlen, start_pos)
+                                               <span class="comment"># <span class="shape">[b, s, 128]</span> 滑动窗口索引</span>
+    <span class="kw">if</span> self.compress_ratio:
+        <span class="comment"># offset: 压缩KV在合并缓存中的起始位置</span>
+        offset = kv.size(1) <span class="kw">if</span> start_pos == 0 <span class="kw">else</span> win
+        <span class="comment"># Prefill: 压缩KV紧接在原始KV后面 (cat拼接)</span>
+        <span class="comment"># Decode:  压缩KV从 kv_cache[win:] 开始</span>
+        <span class="kw">if</span> self.indexer:                        <span class="comment"># CSA层(ratio=4): 学习型 Indexer top-k 稀疏选择</span>
+            compress_topk_idxs = self.indexer(x, qr, start_pos, offset)
+        <span class="kw">else</span>:                                  <span class="comment"># HCA层(ratio=128): 静态索引, 全量访问压缩KV</span>
+            compress_topk_idxs = get_compress_topk_idxs(ratio, bsz, seqlen, start_pos, offset)
+        topk_idxs = torch.cat([topk_idxs, compress_topk_idxs], dim=-1)
+                                               <span class="comment"># <span class="shape">[b, s, 128+topk]</span> 合并索引</span>
+
+    <span class="comment"># ─── 压缩 + 注意力 ───</span>
+    <span class="kw">if</span> start_pos == 0:  <span class="comment"># Prefill</span>
+        <span class="comment"># 滑动窗口写入: 环形缓冲, 保留最后 win 个 token</span>
+        <span class="kw">if</span> seqlen <= win:
+            self.kv_cache[:bsz, :seqlen] = kv
+        <span class="kw">else</span>:
+            cutoff = seqlen % win
+            self.kv_cache[:bsz, cutoff:win], self.kv_cache[:bsz, :cutoff] = \
+                kv[:, -win:].split([win - cutoff, cutoff], dim=1)
+        <span class="kw">if</span> self.compress_ratio:
+            kv_compress = self.compressor(x, start_pos)
+            <span class="kw">if</span> kv_compress <span class="kw">is not</span> None:
+                kv = torch.cat([kv, kv_compress], dim=1)
+                <span class="comment"># <span class="shape">[b, s+s//ratio, 512]</span> ← 原始+压缩 KV 拼接</span>
+        o = sparse_attn(q, kv, self.attn_sink, topk_idxs, self.softmax_scale)
+        <span class="comment"># Prefill: 对拼接的完整 KV 做稀疏注意力</span>
+    <span class="kw">else</span>:              <span class="comment"># Decode (单token)</span>
+        self.kv_cache[:bsz, start_pos % win] = kv.squeeze(1)
+        <span class="kw">if</span> self.compress_ratio:
+            self.compressor(x, start_pos)  <span class="comment"># 增量更新压缩缓存</span>
+        o = sparse_attn(q, self.kv_cache[:bsz], self.attn_sink, topk_idxs, ...)
+        <span class="comment"># Decode: 对 kv_cache (包含 win + 压缩区) 做稀疏注意力</span>
+    <span class="comment"># o: <span class="shape">[b, s, 128/TP, 512]</span></span>
+
+    apply_rotary_emb(o[..., -rd:], freqs_cis, True)  <span class="comment"># 反旋转: 消除 K 的 RoPE 偏移</span>
+
+    <span class="comment"># ─── O 路径: 分组低秩输出投影 ───</span>
+    o = o.view(bsz, seqlen, self.n_local_groups, -1)
+    <span class="comment"># <span class="shape">[b, s, 128/TP, 512]</span> → <span class="shape">[b, s, 16/TP, 8*512=4096]</span></span>
+    <span class="comment"># 128头 ÷ 16组 = 每组8头, 每头512维 → 每组4096维</span>
+    wo_a = self.wo_a.weight.view(self.n_local_groups, self.o_lora_rank, -1)
+    <span class="comment"># <span class="shape">[16/TP, 1024, 4096]</span> ← 分组视图</span>
+    o = torch.einsum(<span class="str">"bsgd,grd->bsgr"</span>, o, wo_a)
+    <span class="comment"># <span class="shape">[b, s, 16/TP, 1024]</span> ← 组内低秩投影 (BF16 einsum)</span>
+    x = self.wo_b(o.flatten(2))
+    <span class="comment"># o.flatten(2): <span class="shape">[b, s, 16/TP * 1024]</span> = <span class="shape">[b, s, 16384/TP]</span></span>
+    <span class="comment"># wo_b: RowParallel(16384, 7168) → all_reduce → <span class="shape">[b, s, 7168]</span></span>
+    <span class="kw">return</span> x</pre>
+</div>
+</details>
+
+<h3 id="sparse-attn">稀疏注意力核 (sparse_attn)</h3>
+<p>
+  <code>sparse_attn</code> 是 DeepSeek-V4 的注意力计算核心，采用 FlashAttention 风格的<b>在线 softmax</b>，
+  但只对预选的 top-k KV 位置做注意力（而非全序列）。此外引入了<b>可学习的 attention sink</b> 偏置。
+</p>
+<p><b>关键设计特点：</b></p>
+<ul>
+  <li><b>KV 是合并张量</b> <code>[b, n, d]</code> — 不拆分 K 和 V，沿用 MLA 的联合 latent 设计</li>
+  <li><b>预计算索引</b> — topk_idxs 在 Indexer 或静态函数中生成，kernel 只做 gather + attention</li>
+  <li><b>Attention Sink</b> — 每个头有一个可学习标量 <code>attn_sink[h]</code>，作为虚拟 token 的注意力分数，防止注意力分布塌缩</li>
+  <li><b>Head padding</b> — 头数不足 16 时填充到 16 以保持 warp 对齐</li>
+</ul>
+
+<details>
+<summary>sparse_attn_kernel 核心算法 · kernel.py L276-368</summary>
+<div class="details-content">
+<pre><span class="file-tag">kernel.py L276-368</span>
+<span class="comment"># 输入:  q[b, m, h, d], kv[b, n, d], attn_sink[h], topk_idxs[b, m, topk]</span>
+<span class="comment"># 输出:  o[b, m, h, d]</span>
+<span class="comment"># Grid:  (m, b) — 每个(seq_pos, batch)一个线程块, 256 threads</span>
+
+<span class="comment"># ─── 初始化 ───</span>
+acc_o = zeros(h, d)               <span class="comment"># 累积输出</span>
+sum_exp = zeros(h)                <span class="comment"># softmax 分母 (running sum of exp)</span>
+scores_max = -inf(h)              <span class="comment"># running max (per head)</span>
+
+<span class="comment"># ─── 头数填充 (kernel.py L360-362) ───</span>
+<span class="comment"># h < 16 时填充到 16: q = cat([q, zeros(16-h)], dim=2)</span>
+<span class="comment"># 目的: 保持 GPU warp (32线程) 对齐, 256 threads / 16 heads = 16 threads/head</span>
+<span class="comment"># TP=8 时 128/8=16 正好, TP=1 时 128 也是 16 的倍数, 故实际不触发</span>
+
+<span class="comment"># ─── 主循环: 分块处理 top-k KV ───</span>
+<span class="kw">for</span> t <span class="kw">in</span> range(ceil(topk / 64)):   <span class="comment"># 每次处理 block=64 个KV位置</span>
+    idxs = topk_idxs[b, m, t*64:(t+1)*64]    <span class="comment"># 取 64 个索引</span>
+    <span class="comment"># padding: idx==-1 的位置在 kv_shared 填 0, scores 设 -inf</span>
+    kv_block = gather(kv[b], idxs)             <span class="comment"># <span class="shape">[64, d]</span> 按索引取 KV</span>
+
+    scores = q @ kv_block.T * scale            <span class="comment"># <span class="shape">[h, 64]</span> 注意力分数</span>
+    <span class="comment"># 注意: KV 是联合 latent 向量 (沿用 MLA 设计), Q×KV^T 直接得到 attention score</span>
+    <span class="comment"># 而非传统的分别计算 Q×K^T 然后 ×V, 这是 latent attention 的核心</span>
+
+    <span class="comment"># ─── 在线 Softmax (FlashAttention 风格) ───</span>
+    scores_max_prev = scores_max
+    scores_max = max(scores_max, row_max(scores))
+    scale_factor = exp(scores_max_prev - scores_max)  <span class="comment"># 修正因子</span>
+    scores = exp(scores - scores_max)
+    sum_exp = sum_exp * scale_factor + row_sum(scores)
+    acc_o = acc_o * scale_factor + scores @ kv_block   <span class="comment"># <span class="shape">[h, d]</span></span>
+    <span class="comment"># 同一个 kv_block 既用于计算 score 也用于加权求和</span>
+    <span class="comment"># 这正是联合 KV latent 的高效之处: KV 是同一个张量</span>
+
+<span class="comment"># ─── Attention Sink (kernel.py L345-346) ───</span>
+<span class="comment"># attn_sink: [h] 每个头一个可学习标量, 作为虚拟 token 的注意力分数</span>
+sum_exp += exp(attn_sink[h] - scores_max)     <span class="comment"># 加入虚拟 token 的 exp 贡献</span>
+<span class="comment"># 不更新 acc_o: 虚拟 token 的 V=0, 只稀释 softmax 分母</span>
+<span class="comment"># 效果: 当所有 KV 都不太相关时, attn_sink "吸收"多余概率</span>
+<span class="comment"># 防止 softmax 分布退化为对某个无关 token 的尖峰</span>
+acc_o /= sum_exp                               <span class="comment"># 最终归一化</span></pre>
+</div>
+</details>
+</section>
+
+<!-- ==================== SECTION 4: COMPRESSOR ==================== -->
+<section id="compressor">
+<h2>KV 压缩器 (Compressor)</h2>
+<p>
+  <b>Compressor</b> 通过<b>学习型门控池化</b>将连续 <code>ratio</code> 个 token 的 KV 压缩为一条记录。
+  对 CSA 层 (ratio=4)，使用 <b>overlap 窗口</b>机制产生更平滑的压缩边界。
+</p>
+<p><b>源码位置：</b><code>model.py</code> L279-377</p>
+
+<h4>压缩原理</h4>
+<div class="info-box">
+  <strong>核心公式：</strong><code>kv_compressed = Σ(softmax(score) × kv)</code>，其中 score 由 wgate 投影 + 可学习的位置编码 ape 得到。
+  <br><b>Overlap (ratio=4):</b> 每个压缩窗口实际看到 2×ratio=8 个 token（当前窗口 + 前一个窗口），前半部分是上一个窗口的"余光"，
+  后半部分是当前窗口的 token。这避免了硬边界导致的信息断裂。
+</div>
+
+<details>
+<summary>Compressor.forward() 代码解读 (Prefill 分支) · model.py L316-377</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L316-377</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, start_pos):
+    bsz, seqlen, _ = x.size()  <span class="comment"># x: <span class="shape">[b, s, 7168]</span></span>
+    ratio = self.compress_ratio <span class="comment"># e.g. 4 or 128</span>
+    x = x.float()
+
+    kv = self.wkv(x)            <span class="comment"># <span class="shape">[b, s, head_dim]</span> or <span class="shape">[b, s, 2*head_dim]</span>(overlap)</span>
+    score = self.wgate(x)       <span class="comment"># <span class="shape">[b, s, head_dim]</span> or <span class="shape">[b, s, 2*head_dim]</span>(overlap)</span>
+
+    <span class="kw">if</span> start_pos == 0:  <span class="comment"># Prefill 分支</span>
+        cutoff = seqlen - seqlen % ratio    <span class="comment"># 对齐到 ratio 整数倍</span>
+
+        <span class="comment"># 处理不能整除的尾部: 存入 kv_state 供 decode 继续使用</span>
+        remainder = seqlen % ratio
+        <span class="kw">if</span> remainder > 0:
+            kv_state[:bsz, offset:offset+remainder] = kv[:, cutoff:]
+            score_state[:bsz, offset:offset+remainder] = score[:, cutoff:] + self.ape[:remainder]
+
+        kv = kv[:, :cutoff].unflatten(1, (-1, ratio))
+        <span class="comment"># <span class="shape">[b, cutoff//ratio, ratio, head_dim]</span></span>
+
+        score = score[:, :cutoff].unflatten(1, (-1, ratio)) + self.ape
+        <span class="comment"># ape: <span class="shape">[ratio, head_dim]</span> — 可学习的位置编码</span>
+        <span class="comment"># score: <span class="shape">[b, cutoff//ratio, ratio, head_dim]</span></span>
+
+        <span class="kw">if</span> self.overlap:  <span class="comment"># ratio=4 时开启 overlap</span>
+            kv = self.overlap_transform(kv, 0)
+            score = self.overlap_transform(score, -inf)
+            <span class="comment"># 扩展为 <span class="shape">[b, cutoff//ratio, 2*ratio, head_dim]</span></span>
+            <span class="comment"># 前 ratio 行 = 上一个窗口的 overlap 部分</span>
+
+        kv = (kv * score.softmax(dim=2)).sum(dim=2)
+        <span class="comment"># softmax在ratio维度: 每个位置的门控权重</span>
+        <span class="comment"># 加权求和: <span class="shape">[b, cutoff//ratio, head_dim]</span></span>
+
+    kv = self.norm(kv.to(dtype))    <span class="comment"># RMSNorm</span>
+    apply_rotary_emb(kv[..., -rd:], freqs_cis)  <span class="comment"># RoPE 加到后64维</span>
+
+    <span class="comment"># 非 RoPE 维度做 FP8 或 FP4+Hadamard 量化</span>
+    <span class="kw">if</span> self.rotate:            <span class="comment"># Indexer 的 Compressor: Hadamard + FP4</span>
+        kv = rotate_activation(kv)
+        fp4_act_quant(kv, fp4_block_size, True)
+    <span class="kw">else</span>:                      <span class="comment"># 主 Compressor: FP8 (block=64)</span>
+        act_quant(kv[..., :-rd], 64, scale_fmt, scale_dtype, True)
+
+    self.kv_cache[:bsz, :seqlen // ratio] = kv   <span class="comment"># 存入压缩 KV 缓存</span></pre>
+</div>
+</details>
+
+<h3 id="compressor-decode">Compressor Decode 增量路径</h3>
+<p>Decode 阶段每次只处理一个 token，Compressor 使用 <b>kv_state / score_state</b> 缓冲区逐步累积，
+每积满 <code>ratio</code> 个 token 后做一次压缩并追加到 KV 缓存。Overlap 模式下维护双倍状态。</p>
+
+<details>
+<summary>Compressor Decode 路径代码解读 · model.py L343-361</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L343-361</span>
+<span class="comment"># Decode: start_pos > 0, 每次一个 token</span>
+should_compress = (start_pos + 1) % self.compress_ratio == 0
+score += self.ape[start_pos % ratio]      <span class="comment"># 加上位置编码</span>
+
+<span class="kw">if</span> self.overlap:  <span class="comment"># ratio=4 的 CSA 层</span>
+    <span class="comment"># 写入当前 token 到状态缓冲区的"当前窗口"区域</span>
+    self.kv_state[:bsz, ratio + start_pos % ratio] = kv.squeeze(1)
+    self.score_state[:bsz, ratio + start_pos % ratio] = score.squeeze(1)
+
+    <span class="kw">if</span> should_compress:  <span class="comment"># 积满 4 个 token</span>
+        <span class="comment"># 将 overlap(前一窗口的前半) + 当前窗口 合并压缩</span>
+        kv_state = torch.cat([
+            self.kv_state[:bsz, :ratio, :d],     <span class="comment"># overlap 部分(前一窗口的 KV 投影前半)</span>
+            self.kv_state[:bsz, ratio:, d:]       <span class="comment"># 当前窗口(KV 投影后半)</span>
+        ], dim=1)                                  <span class="comment"># → <span class="shape">[b, 2*ratio, d]</span></span>
+        score_state = <span class="comment">... 同理 ...</span>
+        kv = (kv_state * score_state.softmax(dim=1)).sum(dim=1, keepdim=True)
+        <span class="comment"># <span class="shape">[b, 1, d]</span> ← 门控池化压缩为单条记录</span>
+        self.kv_state[:bsz, :ratio] = self.kv_state[:bsz, ratio:]  <span class="comment"># 滑动: 当前窗口变为 overlap</span>
+        self.score_state[:bsz, :ratio] = self.score_state[:bsz, ratio:]
+
+<span class="kw">else</span>:  <span class="comment"># ratio=128 的 HCA 层 (无 overlap)</span>
+    self.kv_state[:bsz, start_pos % ratio] = kv.squeeze(1)
+    self.score_state[:bsz, start_pos % ratio] = score.squeeze(1)
+    <span class="kw">if</span> should_compress:  <span class="comment"># 积满 128 个 token</span>
+        kv = (self.kv_state[:bsz] * self.score_state[:bsz].softmax(dim=1)).sum(dim=1, keepdim=True)
+        <span class="comment"># <span class="shape">[b, 1, d]</span> ← 直接池化压缩</span>
+
+<span class="kw">if not</span> should_compress:
+    <span class="kw">return</span>  <span class="comment"># 未满一个窗口, 不产出压缩记录</span>
+<span class="comment"># ... norm → RoPE → quant → 写入 kv_cache[start_pos // ratio]</span></pre>
+</div>
+</details>
+
+<!-- KV Cache Layout Diagram -->
+<h3 id="kv-layout">KV 缓存内存布局</h3>
+<p>每层 Attention 维护一个统一的 <code>kv_cache</code>，前半为<b>滑动窗口</b>区域，后半为<b>压缩缓存</b>区域（仅 ratio>0 层有）。</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;">
+  <defs><marker id="a7" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">KV Cache 内存布局 (per layer)</text>
+
+  <!-- Cache bar -->
+  <rect x="40" y="50" width="700" height="50" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1.5"/>
+
+  <!-- Window region -->
+  <rect x="42" y="52" width="100" height="46" rx="2" fill="#dbe4ff" stroke="#4263eb" stroke-width="1"/>
+  <text x="92" y="72" text-anchor="middle" font-size="10" font-weight="600" fill="#364fc7">滑动窗口</text>
+  <text x="92" y="86" text-anchor="middle" font-size="9" fill="var(--text-muted)">[128] slots</text>
+
+  <!-- Separator -->
+  <line x1="145" y1="50" x2="145" y2="100" stroke="var(--accent)" stroke-width="2"/>
+
+  <!-- Compressed region -->
+  <rect x="147" y="52" width="590" height="46" rx="2" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="442" y="72" text-anchor="middle" font-size="10" font-weight="600" fill="#e67700">压缩缓存</text>
+  <text x="442" y="86" text-anchor="middle" font-size="9" fill="var(--text-muted)">[max_seq_len // ratio] slots (HCA: ~8K, CSA: ~256K)</text>
+
+  <!-- Annotations -->
+  <text x="40" y="128" font-size="11" font-weight="600" fill="var(--text)">kv_cache 分配 (model.py L473-474):</text>
+  <text x="40" y="148" font-size="10" font-family="var(--font-mono)" fill="var(--accent)">kv_cache_size = window_size + (max_seq_len // compress_ratio if ratio else 0)</text>
+  <text x="40" y="166" font-size="10" font-family="var(--font-mono)" fill="var(--text-muted)">kv_cache: [max_batch, kv_cache_size, head_dim=512]</text>
+
+  <!-- Prefill write -->
+  <rect x="40" y="190" width="340" height="95" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="50" y="210" font-size="11" font-weight="600" fill="var(--success)">Prefill 写入 (model.py L518-526)</text>
+  <text x="50" y="228" font-size="9" fill="var(--text)">1. 滑动窗口: 用 <tspan font-weight="600">取模环形写入</tspan></text>
+  <text x="50" y="244" font-size="9" fill="var(--text-muted)">   cutoff = seqlen % win</text>
+  <text x="50" y="258" font-size="9" fill="var(--text-muted)">   cache[cutoff:win], cache[:cutoff] = kv[-win:].split(...)</text>
+  <text x="50" y="274" font-size="9" fill="var(--text)">2. 压缩: Compressor 输出写入 <tspan font-weight="600">cache[win:]</tspan></text>
+
+  <!-- Decode write -->
+  <rect x="400" y="190" width="340" height="95" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="410" y="210" font-size="11" font-weight="600" fill="var(--warning)">Decode 写入 (model.py L530-532)</text>
+  <text x="410" y="228" font-size="9" fill="var(--text)">1. 滑动窗口: <tspan font-weight="600">cache[pos % win]</tspan> = kv</text>
+  <text x="410" y="244" font-size="9" fill="var(--text-muted)">   环形覆盖，始终保持最近 128 个 token</text>
+  <text x="410" y="258" font-size="9" fill="var(--text)">2. 压缩: 每 ratio 个 token 追加一条</text>
+  <text x="410" y="274" font-size="9" fill="var(--text-muted)">   cache[win + pos // ratio] = compressed_kv</text>
+</svg>
+</div>
+
+<div class="info-box warn">
+  <strong>Compressor 的 KV 缓存共享：</strong>
+  Compressor 并不拥有自己的 kv_cache。在 <code>Attention.__init__</code>（L491）中，
+  <code>self.compressor.kv_cache = self.kv_cache[:, win:]</code> —— Compressor 直接写入 Attention 的 kv_cache 的后半部分。
+  同样，Indexer 有独立的 kv_cache（L399，用于存储 Indexer 自己的压缩 KV），与主 Attention 的缓存分开。
+</div>
+</section>
+
+<!-- ==================== SECTION 5: INDEXER ==================== -->
+<section id="indexer">
+<h2>稀疏索引器 (Indexer)</h2>
+<p>
+  <b>Indexer</b> 仅在 CSA 层 (ratio=4) 中启用。它有<b>自己的 Compressor</b>（带 Hadamard 旋转 + FP4 量化模拟），
+  用来构建一个轻量的"索引用 KV"。通过 Q 与压缩索引 KV 的点积打分，选出 <b>top-k=1024</b> 个最相关的压缩 KV 位置。
+</p>
+<p><b>源码位置：</b><code>model.py</code> L380-433</p>
+
+<!-- Indexer Architecture Diagram -->
+<div class="diagram-container">
+<svg viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;">
+  <defs><marker id="a8" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">Indexer 稀疏索引流程 (仅 CSA 层, ratio=4)</text>
+
+  <!-- Inputs -->
+  <rect x="30" y="50" width="120" height="32" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="90" y="70" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">x [b,s,7168]</text>
+
+  <rect x="180" y="50" width="130" height="32" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="245" y="70" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">qr [b,s,1536]</text>
+  <text x="245" y="45" font-size="9" fill="var(--text-muted)">来自主 Attention 的 Q 低秩</text>
+
+  <!-- Q Branch -->
+  <rect x="340" y="50" width="170" height="32" rx="5" fill="#dbe4ff" stroke="#4263eb" stroke-width="1.2"/>
+  <text x="425" y="70" text-anchor="middle" font-size="10" font-weight="600" fill="#4263eb">Q: wq_b (1536→64×128/TP)</text>
+  <line x1="310" y1="66" x2="338" y2="66" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <rect x="340" y="96" width="170" height="24" rx="4" fill="#fff3bf" stroke="#e67700" stroke-width="1"/>
+  <text x="425" y="112" text-anchor="middle" font-size="9" fill="#e67700" font-weight="600">RoPE (后64维) + Hadamard旋转</text>
+  <line x1="425" y1="82" x2="425" y2="94" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <rect x="340" y="132" width="170" height="24" rx="4" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="425" y="148" text-anchor="middle" font-size="9" fill="#c92a2a" font-weight="600">FP4 inplace quant+dequant</text>
+  <line x1="425" y1="120" x2="425" y2="130" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <!-- KV Branch -->
+  <rect x="30" y="96" width="170" height="32" rx="5" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1.2"/>
+  <text x="115" y="112" text-anchor="middle" font-size="10" font-weight="600" fill="#2b8a3e">独立 Compressor (rotate=True)</text>
+  <text x="115" y="124" text-anchor="middle" font-size="8" fill="var(--text-muted)">x → 门控池化 → Hadamard → FP4</text>
+  <line x1="90" y1="82" x2="90" y2="94" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <rect x="30" y="144" width="170" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="115" y="160" text-anchor="middle" font-size="9" fill="var(--text)">→ Indexer kv_cache [b,n//4,128]</text>
+  <line x1="115" y1="128" x2="115" y2="142" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <!-- Weights projection -->
+  <rect x="570" y="50" width="180" height="32" rx="5" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1.2"/>
+  <text x="660" y="70" text-anchor="middle" font-size="10" fill="var(--text)">weights_proj: x → [b,s,64/TP]</text>
+  <text x="660" y="44" font-size="9" fill="var(--text-muted)">per-head importance weight</text>
+
+  <!-- Scoring -->
+  <rect x="180" y="190" width="380" height="50" rx="6" fill="var(--svg-hca-fill)" stroke="var(--warning)" stroke-width="1.5"/>
+  <text x="370" y="210" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warning)">点积打分 + 加权聚合</text>
+  <text x="370" y="228" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--text-muted)">score = (einsum("bshd,btd→bsht", q, kv).relu() × weights).sum(h)</text>
+
+  <line x1="425" y1="156" x2="400" y2="188" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+  <line x1="115" y1="168" x2="250" y2="188" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+  <line x1="660" y1="82" x2="500" y2="188" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <!-- all_reduce -->
+  <rect x="255" y="258" width="230" height="24" rx="4" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="370" y="274" text-anchor="middle" font-size="9" fill="var(--text)">all_reduce(score) → [b, s, n_compressed]</text>
+  <line x1="370" y1="240" x2="370" y2="256" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <!-- Topk -->
+  <rect x="230" y="298" width="280" height="36" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="370" y="316" text-anchor="middle" font-size="11" font-weight="700" fill="var(--success)">topk(score, k=min(1024, n_comp))</text>
+  <text x="370" y="328" text-anchor="middle" font-size="9" fill="var(--text-muted)">→ [b, s, 1024] 压缩 KV 位置索引</text>
+  <line x1="370" y1="282" x2="370" y2="296" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+
+  <!-- Mask note -->
+  <rect x="540" y="258" width="200" height="60" rx="4" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="640" y="278" text-anchor="middle" font-size="9" font-weight="600" fill="var(--text)">Prefill 因果掩码</text>
+  <text x="640" y="294" text-anchor="middle" font-size="8" fill="var(--text-muted)">位置 i 只能看到 &lt; i//ratio</text>
+  <text x="640" y="308" text-anchor="middle" font-size="8" fill="var(--text-muted)">的压缩 KV, 超出部分设为 -inf</text>
+
+  <!-- Output -->
+  <rect x="290" y="348" width="160" height="24" rx="12" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="370" y="364" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">topk_idxs + offset</text>
+  <line x1="370" y1="334" x2="370" y2="346" stroke="var(--accent)" stroke-width="1" marker-end="url(#a8)"/>
+</svg>
+</div>
+
+<div class="info-box">
+  <strong>Hadamard 旋转的作用：</strong>
+  FP4 量化精度极低（仅 16 个可表示值），直接量化会损失大量信息。
+  Hadamard 旋转（<code>rotate_activation</code>，model.py L247-251）先做正交变换，
+  将信息均匀扩散到所有维度，消除稀疏/集中的激活模式。
+  旋转后的激活值分布更均匀，FP4 量化误差显著降低。
+  这是 <b>Indexer 专用</b>的——主 Compressor 不用 Hadamard（用 FP8 精度足够）。
+</div>
+
+<details>
+<summary>Indexer.forward() 代码解读 · model.py L402-433</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L402-433</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, qr, start_pos, offset):
+    <span class="comment"># x:  <span class="shape">[b, s, 7168]</span>   — 原始输入</span>
+    <span class="comment"># qr: <span class="shape">[b, s, 1536]</span>  — 来自主注意力的 q_lora_rank 表示</span>
+
+    <span class="comment"># 1. Q 投影</span>
+    q = self.wq_b(qr)                        <span class="comment"># <span class="shape">[b, s, 64/TP * 128]</span></span>
+    q = q.unflatten(-1, (self.n_local_heads, self.head_dim))
+                                               <span class="comment"># <span class="shape">[b, s, 64/TP, 128]</span></span>
+    apply_rotary_emb(q[..., -rd:], freqs_cis)  <span class="comment"># RoPE</span>
+
+    <span class="comment"># 2. Hadamard 旋转 + FP4 量化模拟 (信息扩散 → 低比特友好)</span>
+    q = rotate_activation(q)                   <span class="comment"># Hadamard 变换</span>
+    fp4_act_quant(q, fp4_block_size, True)     <span class="comment"># FP4 inplace quant+dequant</span>
+
+    <span class="comment"># 3. 索引用 KV 压缩 (独立的 Compressor, 也带 Hadamard+FP4)</span>
+    self.compressor(x, start_pos)              <span class="comment"># 填充 self.kv_cache</span>
+
+    <span class="comment"># 4. 权重投影 (per-head importance)</span>
+    weights = self.weights_proj(x) * (scale * n_heads**-0.5)
+                                               <span class="comment"># <span class="shape">[b, s, 64/TP]</span></span>
+
+    <span class="comment"># 5. 点积打分</span>
+    index_score = torch.einsum(<span class="str">"bshd,btd->bsht"</span>, q, self.kv_cache[:bsz, :end_pos//ratio])
+                                               <span class="comment"># <span class="shape">[b, s, 64/TP, n_compressed]</span></span>
+    index_score = (index_score.relu_() * weights.unsqueeze(-1)).sum(dim=2)
+                                               <span class="comment"># ReLU + 加权 → <span class="shape">[b, s, n_compressed]</span></span>
+    <span class="kw">if</span> world_size > 1: dist.all_reduce(index_score)
+
+    <span class="comment"># 6. Top-k 选择</span>
+    topk_idxs = index_score.topk(min(self.index_topk, end_pos//ratio), dim=-1)[1]
+                                               <span class="comment"># <span class="shape">[b, s, 1024]</span> ← 选出最重要的压缩KV位置</span>
+    <span class="kw">return</span> topk_idxs + offset            <span class="comment"># 加上偏移映射到 kv_cache 位置</span></pre>
+</div>
+</details>
+</section>
+
+<!-- ==================== SECTION 6: MoE ==================== -->
+<section id="moe">
+<h2>MoE 模块 (Mixture of Experts)</h2>
+<p>
+  DeepSeek-V4 Pro 使用 <b>384 个路由专家 + 1 个共享专家</b>的 MoE 架构。每个 token 激活 <b>6 个路由专家</b>。
+  前 3 层使用<b>哈希路由</b>（token ID 决定专家分配），其余层使用 <b>sqrtsoftplus 评分</b>动态路由。
+</p>
+
+<!-- MoE Routing SVG -->
+<div class="diagram-container">
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:760px;">
+  <defs><marker id="a4" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="380" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">MoE 路由与计算流程</text>
+
+  <!-- Input -->
+  <rect x="310" y="36" width="140" height="28" rx="14" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="380" y="54" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">x [b×s, 7168]</text>
+
+  <!-- Gate -->
+  <rect x="270" y="82" width="220" height="48" rx="6" fill="var(--svg-hca-fill)" stroke="var(--warning)" stroke-width="1.5"/>
+  <text x="380" y="100" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warning)">Gate (路由器)</text>
+  <text x="380" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">scores = √softplus(x·W) · route_scale=2.5</text>
+  <line x1="380" y1="64" x2="380" y2="80" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+
+  <!-- Hash vs Score -->
+  <rect x="60" y="148" width="180" height="36" rx="5" fill="#ffe3e3" stroke="#c92a2a" stroke-width="1"/>
+  <text x="150" y="163" text-anchor="middle" font-size="10" font-weight="600" fill="#c92a2a">哈希路由 (Layer 0-2)</text>
+  <text x="150" y="177" text-anchor="middle" font-size="9" fill="var(--text-muted)">tid2eid[token_id] → expert_ids</text>
+
+  <rect x="280" y="148" width="200" height="36" rx="5" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1"/>
+  <text x="380" y="163" text-anchor="middle" font-size="10" font-weight="600" fill="#2b8a3e">评分路由 (Layer 3-60)</text>
+  <text x="380" y="177" text-anchor="middle" font-size="9" fill="var(--text-muted)">topk(scores + bias, k=6)</text>
+
+  <rect x="520" y="148" width="180" height="36" rx="5" fill="var(--bg-code)" stroke="var(--border)" stroke-width="1"/>
+  <text x="610" y="163" text-anchor="middle" font-size="10" fill="var(--text)">weights = gather + normalize</text>
+  <text x="610" y="177" text-anchor="middle" font-size="9" fill="var(--text-muted)">weights /= sum(weights)</text>
+
+  <line x1="350" y1="130" x2="200" y2="146" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="380" y1="130" x2="380" y2="146" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+  <line x1="410" y1="130" x2="560" y2="146" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+
+  <!-- Expert Pool -->
+  <rect x="100" y="210" width="560" height="56" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="380" y="228" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text)">384 Expert Pool (SwiGLU FFN, FP4 权重)</text>
+  <text x="380" y="248" text-anchor="middle" font-size="9" fill="var(--text-muted)">每 Expert: w1[7168→3072] + w3[7168→3072] + w2[3072→7168] · 每GPU 384/TP 个</text>
+  <text x="380" y="260" text-anchor="middle" font-size="8" fill="var(--shape-color)">x → SiLU(w1(x)) × clamp(w3(x), ±10) → w2(·) · 加权求和 → all_reduce</text>
+
+  <line x1="380" y1="184" x2="380" y2="208" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+
+  <!-- Shared Expert -->
+  <rect x="240" y="282" width="280" height="30" rx="5" fill="#dbe4ff" stroke="#4263eb" stroke-width="1.2"/>
+  <text x="380" y="301" text-anchor="middle" font-size="10" font-weight="600" fill="#4263eb">+ Shared Expert (BF16, 全 token) = 最终输出</text>
+  <line x1="380" y1="266" x2="380" y2="280" stroke="var(--accent)" stroke-width="1" marker-end="url(#a4)"/>
+</svg>
+</div>
+
+<h3 id="gate">Gate — 路由机制详解</h3>
+<details>
+<summary>Gate.forward() 代码解读 · model.py L564-584</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L564-584</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, input_ids=None):
+    <span class="comment"># x: <span class="shape">[n_tokens, 7168]</span> <span class="dtype">FP32</span> (已展平)</span>
+    scores = linear(x.float(), self.weight.float())
+    <span class="comment"># weight: <span class="shape">[384, 7168]</span>, scores: <span class="shape">[n_tokens, 384]</span></span>
+
+    <span class="comment"># sqrtsoftplus: √(softplus(x)) = √(log(1+exp(x)))</span>
+    scores = F.softplus(scores).sqrt()   <span class="comment"># 正值、有梯度、比 sigmoid 平滑</span>
+
+    original_scores = scores
+    scores = scores + self.bias          <span class="comment"># bias 影响选择但不影响权重</span>
+    <span class="comment"># bias: <span class="shape">[384]</span> — 学习型负载均衡偏置</span>
+
+    indices = scores.topk(self.topk, dim=-1)[1]   <span class="comment"># <span class="shape">[n_tokens, 6]</span></span>
+    weights = original_scores.gather(1, indices)    <span class="comment"># 用原始分数(无bias)做权重</span>
+    weights /= weights.sum(dim=-1, keepdim=True)   <span class="comment"># 归一化</span>
+    weights *= self.route_scale                     <span class="comment"># × 2.5 缩放</span>
+    <span class="kw">return</span> weights, indices</pre>
+</div>
+</details>
+
+<h3 id="expert">Expert — SwiGLU FFN</h3>
+<details>
+<summary>Expert.forward() + MoE.forward() 代码解读 · model.py L596-644</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L596-606</span>
+<span class="comment"># Expert: SwiGLU FFN with clamp</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, weights=None):
+    <span class="comment"># x: <span class="shape">[n_selected, 7168]</span> — 路由到此专家的 token</span>
+    gate = self.w1(x).float()    <span class="comment"># <span class="shape">[n, 3072]</span> FP4 → act_quant → fp4_gemm</span>
+    up = self.w3(x).float()      <span class="comment"># <span class="shape">[n, 3072]</span> FP4 → act_quant → fp4_gemm</span>
+    up = torch.clamp(up, -10, 10)     <span class="comment"># swiglu_limit=10 防止溢出</span>
+    gate = torch.clamp(gate, max=10)
+    x = F.silu(gate) * up        <span class="comment"># SwiGLU 激活</span>
+    <span class="kw">if</span> weights: x = weights * x   <span class="comment"># 乘路由权重</span>
+    <span class="kw">return</span> self.w2(x.to(dtype))  <span class="comment"># <span class="shape">[n, 7168]</span></span>
+
+<span class="file-tag">model.py L629-644</span>
+<span class="comment"># MoE dispatch + combine</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, input_ids):
+    x = x.view(-1, self.dim)    <span class="comment"># <span class="shape">[b*s, 7168]</span></span>
+    weights, indices = self.gate(x, input_ids.flatten())
+    y = torch.zeros_like(x, dtype=torch.float32)
+    counts = torch.bincount(indices.flatten(), minlength=384)
+
+    <span class="kw">for</span> i <span class="kw">in</span> range(local_experts):  <span class="comment"># 遍历本rank的专家</span>
+        idx, top = torch.where(indices == i)  <span class="comment"># 找到路由到 expert_i 的 token</span>
+        y[idx] += expert_i(x[idx], weights[idx, top, None])
+    dist.all_reduce(y)           <span class="comment"># 跨 TP ranks 汇总</span>
+    y += self.shared_experts(x)  <span class="comment"># + 共享专家</span>
+    <span class="kw">return</span> y.view(shape)          <span class="comment"># <span class="shape">[b, s, 7168]</span></span></pre>
+</div>
+</details>
+</section>
+
+<!-- ==================== SECTION 7: QUANTIZATION ==================== -->
+<section id="quant">
+<h2>量化系统 (Quantization)</h2>
+<p>
+  DeepSeek-V4 Pro 使用<b>三级量化精度</b>，由 TileLang（基于 TVM 的 tile 编程 DSL）实现自定义 GPU kernel：
+</p>
+
+<table class="config-table">
+<thead><tr><th>组件</th><th>权重精度</th><th>权重 Scale</th><th>激活精度</th><th>激活 Scale</th><th>GEMM Kernel</th></tr></thead>
+<tbody>
+<tr><td>MoE 专家 (w1/w2/w3)</td><td class="val">FP4 E2M1</td><td>E8M0 per 32</td><td class="val">FP8 E4M3</td><td>E8M0 per 128</td><td class="key">fp4_gemm</td></tr>
+<tr><td>Dense 层 (wq_a/wq_b/wkv/...)</td><td class="val">FP8 E4M3</td><td>E8M0 per 128×128</td><td class="val">FP8 E4M3</td><td>E8M0 per 128</td><td class="key">fp8_gemm</td></tr>
+<tr><td>wo_a (attention output)</td><td class="val">BF16 (预反量化)</td><td>—</td><td class="val">BF16</td><td>—</td><td>F.linear</td></tr>
+<tr><td>KV Cache (非RoPE部分)</td><td colspan="5">FP8 inplace quant+dequant 模拟 QAT 噪声（block_size=64）</td></tr>
+<tr><td>Indexer Q/KV</td><td colspan="5">FP4 inplace quant+dequant（Hadamard 旋转后）</td></tr>
+</tbody>
+</table>
+
+<h3 id="act-quant">FP8 激活量化 (act_quant)</h3>
+<p><b>源码：</b><code>kernel.py</code> L40-126</p>
+<div class="info-box">
+  <strong>Block-wise FP8 量化核心公式：</strong><br>
+  <code>scale = max(|x_block|) / 448</code> （可选 power-of-2 舍入到 MXFP 格式）<br>
+  <code>y = clamp(x / scale, -448, 448)</code> → 存储为 <code>float8_e4m3fn</code><br>
+  <b>inplace 模式：</b> <code>y = cast_bf16(cast_fp8(x/s)) × s</code> — 模拟量化噪声，用于 QAT
+</div>
+
+<h3 id="fp8-gemm">FP8 GEMM (双累加器设计)</h3>
+<p><b>源码：</b><code>kernel.py</code> L203-273</p>
+<p>
+  关键创新是<b>双累加器</b>设计：内部 FP8 矩阵乘 accumulate 到 <code>C_local</code>，每处理完一个 128-元素 K-block 后，
+  乘以 dequant scale 累加到 <code>C_local_accum</code>，然后清空 <code>C_local</code>。
+  这避免了将 scale 折入 FP8 内积（会损失精度），在 block 级别用 FP32 做 scale 修正。
+</p>
+
+<details>
+<summary>fp8_gemm 双累加器伪代码</summary>
+<div class="details-content">
+<pre><span class="comment"># C[M,N] = A_fp8[M,K] × B_fp8[N,K]^T</span>
+<span class="comment"># Block: [32M, 128N, 128K], 4-stage pipeline</span>
+
+C_local = zeros(32, 128)          <span class="comment"># FP8 内积累加器</span>
+C_local_accum = zeros(32, 128)    <span class="comment"># Scale 修正累加器</span>
+
+<span class="kw">for</span> k <span class="kw">in</span> range(K // 128):
+    A_tile = A[by*32, k*128 : 128]           <span class="comment"># <span class="shape">[32, 128]</span> <span class="dtype">FP8</span></span>
+    B_tile = B[bx*128, k*128 : 128]          <span class="comment"># <span class="shape">[128, 128]</span> <span class="dtype">FP8</span></span>
+
+    Scale_B = scales_b[bx*128//128, k]       <span class="comment"># 标量: 此 N-block, K-iter 的权重 scale</span>
+    Scale_C[i] = scales_a[i, k] * Scale_B    <span class="comment"># <span class="shape">[32]</span> per-row 合并 scale</span>
+
+    C_local += A_tile @ B_tile^T             <span class="comment"># FP8 矩阵乘 → FP32 累加</span>
+    C_local_accum += C_local * Scale_C       <span class="comment"># ← scale 修正: 关键精度保护步骤</span>
+    C_local = 0                              <span class="comment"># 清空, 下一 K-block 重新累加</span></pre>
+</div>
+</details>
+
+<h3 id="fp4-gemm">FP4 GEMM (混合精度)</h3>
+<p><b>源码：</b><code>kernel.py</code> L441-536</p>
+<p>
+  用于 MoE 专家层。激活为 FP8 (per-128 scale)，权重为 FP4 (per-32 E8M0 scale)。
+  Kernel 内部将 FP4 经过 <code>FP4→FP32→FP8</code> 两步转换后，复用 FP8 GEMM 硬件指令。
+  <b>block_K=32</b> 与 FP4 的 scale group 对齐，这是关键设计：
+</p>
+
+<details>
+<summary>FP4 GEMM 关键设计细节</summary>
+<div class="details-content">
+<pre><span class="file-tag">kernel.py L457-511 设计要点</span>
+<span class="comment"># 块大小设计 (kernel.py L460-463):</span>
+act_group_size = 128      <span class="comment"># FP8 激活 scale 的粒度</span>
+weight_group_size = 32    <span class="comment"># FP4 权重 scale 的粒度</span>
+block_K = 32              <span class="comment"># ← 与 weight_group_size 对齐!</span>
+n_sub = 128 // 32 = 4    <span class="comment"># 每个 act scale group 包含 4 个 weight scale group</span>
+
+<span class="comment"># 与 FP8 GEMM 的关键差异:</span>
+<span class="comment"># FP8 GEMM: block_K=128, 每次处理一个完整的 act scale group</span>
+<span class="comment">#           Scale_B 是 per-128 block: scales_b[N//128, K//128]</span>
+<span class="comment"># FP4 GEMM: block_K=32, 每次只处理一个 weight scale group</span>
+<span class="comment">#           Scale_B 是 per-32 per-row: scales_b[N, K//32]</span>
+<span class="comment">#           Scale_A 按 k // n_sub 索引: 每 4 个 block_K 共享一个 act scale</span>
+
+<span class="comment"># FP4→FP8 转换 (kernel.py L495-496):</span>
+<span class="kw">for</span> i, j <span class="kw">in</span> T.Parallel(block_N, block_K):
+    B_shared[i, j] = T.Cast(FP8, T.Cast(FP32, B_fp4_shared[i, j]))
+<span class="comment"># 必须经过 FP32 中转: FP4→FP32→FP8 避免 C++ 模板重载歧义</span>
+
+<span class="comment"># Scale 合并 (kernel.py L498-509):</span>
+<span class="comment"># 每个 k 迭代, scale_b_frag[i] = scales_b[N_idx + i, k]  (per-row per-32)</span>
+<span class="comment"># 每个 k 迭代, scale_a_frag[i] = scales_a[M_idx + i, k // 4]  (per-128 共享)</span>
+<span class="comment"># C_local_accum += C_local * scale_a * scale_b  (双 scale 合并)</span></pre>
+</div>
+</details>
+
+<div class="info-box warn">
+  <strong>FP4 E2M1 值集：</strong> <code>{0, ±0.5, ±1, ±1.5, ±2, ±3, ±4, ±6}</code>，仅 16 个可表示值。
+  每 32 个元素共享一个 E8M0 (纯指数) power-of-2 scale，形成 MXFP4 格式。<br>
+  <b>FP8 vs FP4 scale 粒度对比：</b>
+  FP8 权重 scale 为 per-128×128 block（2D 块），而 FP4 权重 scale 为 per-row-per-32（1D 条带）。
+  FP4 更细粒度的 scale 补偿了更低的数值精度。
+</div>
+</section>
+
+<!-- ==================== SECTION 8: MTP ==================== -->
+<section id="mtp">
+<h2>Multi-Token Prediction (MTP)</h2>
+<p>
+  DeepSeek-V4 在第 61 层（主模型之后）附加一个 <b>MTPBlock</b>，用于训练时的多 token 预测辅助任务。
+  MTPBlock 继承自 Block，额外增加了 <code>e_proj</code>（embed 投影）和 <code>h_proj</code>（hidden 投影），
+  并与主模型<b>共享 embed 和 head</b>。
+</p>
+<p><b>源码位置：</b><code>model.py</code> L738-766</p>
+
+<details>
+<summary>MTPBlock.forward() 代码解读 · model.py L756-766</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L756-766</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, start_pos, input_ids):
+    <span class="comment"># x: <span class="shape">[b, s, 4, 7168]</span> — 主模型最后一层的4条残差流输出</span>
+    <span class="comment"># input_ids: <span class="shape">[b, s]</span> — 下一个位置的 token ID (训练时移位)</span>
+
+    e = self.embed(input_ids)           <span class="comment"># <span class="shape">[b, s, 7168]</span> ← 共享 embedding</span>
+    e = self.enorm(e)                   <span class="comment"># RMSNorm</span>
+    x = self.hnorm(x)                   <span class="comment"># <span class="shape">[b, s, 4, 7168]</span> 对hidden归一化</span>
+    x = self.e_proj(e).unsqueeze(2) + self.h_proj(x)
+    <span class="comment"># e_proj(e): <span class="shape">[b, s, 7168]</span> → unsqueeze → <span class="shape">[b, s, 1, 7168]</span></span>
+    <span class="comment"># h_proj(x): <span class="shape">[b, s, 4, 7168]</span></span>
+    <span class="comment"># 广播相加:  <span class="shape">[b, s, 4, 7168]</span> — embed信息注入到4条流中</span>
+
+    x = super().forward(x, start_pos, input_ids)
+    <span class="comment"># 走完整的 Block (HC + Attention + HC + MoE + HC)</span>
+
+    logits = self.head(x, self.hc_head_fn, ...)
+    <span class="comment"># 共享 head: HC-Head → RMSNorm → Linear → <span class="shape">[b, 129280]</span></span>
+    <span class="kw">return</span> logits</pre>
+</div>
+</details>
+
+<div class="info-box">
+  <strong>MTP 的 compress_ratio=0：</strong> MTP 层（Layer 61）的 compress_ratio 为 0（从 config.json 中可见列表末尾），
+  意味着纯滑动窗口注意力，不做任何 KV 压缩。这是合理的——MTP 是辅助训练任务，不需要长距离依赖。
+</div>
+</section>
+
+<!-- ==================== SECTION: LINEAR DISPATCH ==================== -->
+<section id="linear-dispatch">
+<h2>线性层精度分发 (Linear Dispatch)</h2>
+<p>
+  DeepSeek-V4 的线性层并非简单的 <code>F.linear</code>。模块级 <code>linear()</code> 函数根据权重 dtype 自动选择计算路径：
+  FP4 权重走 <code>fp4_gemm</code>，FP8 走 <code>fp8_gemm</code>，BF16/FP32 走原生 <code>F.linear</code>。
+  激活在量化 GEMM 路径中自动经过 <code>act_quant</code> 量化为 FP8。
+</p>
+<p><b>源码位置：</b><code>model.py</code> L108-120</p>
+
+<details open>
+<summary>linear() 分发逻辑 · model.py L108-120</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L108-120</span>
+<span class="kw">def</span> <span class="fn">linear</span>(x, weight, bias=None):
+    <span class="comment"># 根据 weight.dtype 自动选择计算路径</span>
+    assert bias is None
+
+    <span class="kw">if</span> weight.dtype == torch.float4_e2m1fn_x2:
+        <span class="comment"># FP4 专家权重: act_quant → FP8 激活, 然后 FP8×FP4 GEMM</span>
+        x, s = act_quant(x, block_size, scale_fmt, scale_dtype)
+        <span class="comment"># x: <span class="shape">[*, K]</span> <span class="dtype">FP8 E4M3</span>, s: <span class="shape">[*, K//128]</span> per-128 scale</span>
+        <span class="kw">return</span> fp4_gemm(x, s, weight, weight.scale, scale_dtype)
+        <span class="comment"># weight: <span class="shape">[N, K//2]</span> <span class="dtype">FP4 E2M1</span>, weight.scale: <span class="shape">[N, K//32]</span> <span class="dtype">E8M0</span></span>
+
+    <span class="kw">elif</span> weight.dtype == torch.float8_e4m3fn:
+        <span class="comment"># FP8 Dense 权重 (wq_a, wq_b, wkv, wo_b 等)</span>
+        x, s = act_quant(x, block_size, scale_fmt, scale_dtype)
+        <span class="kw">return</span> fp8_gemm(x, s, weight, weight.scale, scale_dtype)
+        <span class="comment"># weight.scale: <span class="shape">[N//128, K//128]</span> per-128×128 block scale</span>
+
+    <span class="kw">else</span>:
+        <span class="comment"># BF16 权重 (wo_a 已在 convert.py 中反量化)</span>
+        <span class="kw">return</span> F.linear(x, weight)
+</pre>
+</div>
+</details>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;">
+  <defs><marker id="a6" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--text)">Linear 精度分发路径</text>
+
+  <!-- Input x -->
+  <rect x="20" y="50" width="120" height="36" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="80" y="68" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">x (BF16)</text>
+  <text x="80" y="80" text-anchor="middle" font-size="9" fill="var(--text-muted)">[b×s, dim]</text>
+
+  <!-- Branch -->
+  <line x1="140" y1="68" x2="200" y2="68" stroke="var(--accent)" stroke-width="1.5"/>
+  <circle cx="200" cy="68" r="12" fill="var(--bg-code)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="200" y="72" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">?</text>
+
+  <!-- FP4 path -->
+  <line x1="200" y1="56" x2="300" y2="30" stroke="var(--danger)" stroke-width="1.2" marker-end="url(#a6)"/>
+  <rect x="305" y="16" width="160" height="50" rx="5" fill="#ffe3e3" stroke="var(--danger)" stroke-width="1.2"/>
+  <text x="385" y="34" text-anchor="middle" font-size="10" font-weight="600" fill="var(--danger)">FP4 路径 (Expert w1/w2/w3)</text>
+  <text x="385" y="48" text-anchor="middle" font-size="9" fill="var(--text-muted)">act_quant(x)→FP8</text>
+  <text x="385" y="60" text-anchor="middle" font-size="9" fill="var(--text-muted)">fp4_gemm: FP8×FP4 → BF16</text>
+
+  <!-- FP8 path -->
+  <line x1="212" y1="68" x2="300" y2="90" stroke="var(--warning)" stroke-width="1.2" marker-end="url(#a6)"/>
+  <rect x="305" y="76" width="160" height="50" rx="5" fill="#fff3bf" stroke="var(--warning)" stroke-width="1.2"/>
+  <text x="385" y="94" text-anchor="middle" font-size="10" font-weight="600" fill="var(--warning)">FP8 路径 (Dense 层)</text>
+  <text x="385" y="108" text-anchor="middle" font-size="9" fill="var(--text-muted)">act_quant(x)→FP8</text>
+  <text x="385" y="120" text-anchor="middle" font-size="9" fill="var(--text-muted)">fp8_gemm: FP8×FP8 → BF16</text>
+
+  <!-- BF16 path -->
+  <line x1="200" y1="80" x2="300" y2="156" stroke="var(--success)" stroke-width="1.2" marker-end="url(#a6)"/>
+  <rect x="305" y="142" width="160" height="40" rx="5" fill="#d3f9d8" stroke="var(--success)" stroke-width="1.2"/>
+  <text x="385" y="160" text-anchor="middle" font-size="10" font-weight="600" fill="var(--success)">BF16 路径 (wo_a)</text>
+  <text x="385" y="174" text-anchor="middle" font-size="9" fill="var(--text-muted)">F.linear(x, weight)</text>
+
+  <!-- Output -->
+  <rect x="530" y="72" width="120" height="36" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="590" y="90" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)">output (BF16)</text>
+  <line x1="465" y1="41" x2="528" y2="80" stroke="var(--danger)" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="465" y1="101" x2="528" y2="90" stroke="var(--warning)" stroke-width="1" marker-end="url(#a6)"/>
+  <line x1="465" y1="162" x2="528" y2="100" stroke="var(--success)" stroke-width="1" marker-end="url(#a6)"/>
+
+  <!-- Scale details -->
+  <text x="560" y="140" font-size="9" fill="var(--text-muted)">FP4: weight.scale per 32 (E8M0)</text>
+  <text x="560" y="155" font-size="9" fill="var(--text-muted)">FP8: weight.scale per 128×128 (E8M0)</text>
+  <text x="560" y="170" font-size="9" fill="var(--text-muted)">BF16: 无 scale (已预反量化)</text>
+</svg>
+</div>
+
+<table class="config-table">
+<thead><tr><th>使用该路径的层</th><th>权重 dtype</th><th>Weight Scale</th><th>act_quant block</th><th>GEMM Kernel</th></tr></thead>
+<tbody>
+<tr><td>Expert w1, w2, w3</td><td class="val">FP4 E2M1 (float4_e2m1fn_x2)</td><td>per-32 E8M0</td><td>per-128</td><td class="key">fp4_gemm (block_K=32)</td></tr>
+<tr><td>wq_a, wq_b, wkv, wo_b, etc.</td><td class="val">FP8 E4M3 (float8_e4m3fn)</td><td>per-128×128 E8M0</td><td>per-128</td><td class="key">fp8_gemm (block_K=128)</td></tr>
+<tr><td>wo_a (预反量化), head, embed</td><td class="val">BF16 (bfloat16)</td><td>—</td><td>—</td><td>F.linear</td></tr>
+</tbody>
+</table>
+
+<div class="info-box">
+  <strong>关键洞察：</strong>
+  <code>block_size=128</code> 和 <code>fp4_block_size=32</code> 是模块级常量（model.py L17-18），分别控制 FP8 和 FP4 的量化粒度。
+  <code>scale_fmt</code> 和 <code>scale_dtype</code> 在 <code>Transformer.__init__</code> 中设置为全局变量（L773-778），
+  当 <code>args.scale_dtype=="fp8"</code> 时使用 E8M0（纯指数 power-of-2）scale 格式。
+</div>
+</section>
+
+<!-- ==================== SECTION: PARALLEL HEAD ==================== -->
+<section id="parallel-head">
+<h2>ParallelHead — 输出投影与简化 HC</h2>
+<p>
+  <b>ParallelHead</b> 是模型的最终输出层，负责将 4 条残差流合并为单一向量，再投影到词表空间。
+  与 Block 中使用 Sinkhorn 双随机矩阵的 hc_pre 不同，ParallelHead 使用<b>简化的 HC</b>：
+  仅用 sigmoid 门控（无 Sinkhorn 迭代），参数量更少（<code>hc_head_fn: [4, 28672]</code> vs Block 的 <code>[24, 28672]</code>）。
+</p>
+<p><b>源码位置：</b><code>model.py</code> ParallelHead 类 (L703-735)</p>
+
+<details open>
+<summary>ParallelHead.hc_head() 代码解读 · model.py L728-735</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L728-735</span>
+<span class="kw">def</span> <span class="fn">hc_head</span>(self, x, hc_fn, hc_scale, hc_base):
+    <span class="comment"># x: <span class="shape">[b, s, 4, 7168]</span> ← 最后一层的4条残差流</span>
+    <span class="comment"># hc_fn: <span class="shape">[4, 28672]</span> ← 注意: 仅4行, 不是24行!</span>
+    <span class="comment"># hc_scale: <span class="shape">[1]</span>  ← 标量 scale</span>
+    <span class="comment"># hc_base: <span class="shape">[4]</span>   ← 4个 bias</span>
+    shape, dtype = x.size(), x.dtype
+    x = x.flatten(2).float()     <span class="comment"># <span class="shape">[b, s, 28672]</span> ← 4×7168 拼接</span>
+    rsqrt = torch.rsqrt(x.square().mean(-1, keepdim=True) + self.norm_eps)
+    mixes = F.linear(x, hc_fn) * rsqrt
+                                  <span class="comment"># <span class="shape">[b, s, 4]</span> ← 线性投影到4维(每流一个权重)</span>
+    pre = torch.sigmoid(mixes * hc_scale + hc_base) + self.hc_eps
+                                  <span class="comment"># <span class="shape">[b, s, 4]</span> ← sigmoid 门控 + ε</span>
+    <span class="comment"># 与 hc_pre 的关键区别:</span>
+    <span class="comment"># 1. 只有 pre, 没有 post 和 comb (因为这是最后一步, 不需要分配回多流)</span>
+    <span class="comment"># 2. 直接 sigmoid, 不走 Sinkhorn (计算更轻量)</span>
+    <span class="comment"># 3. 单个 scale 标量, 而非 3 个 (pre/post/comb 各一个)</span>
+    y = torch.sum(pre.unsqueeze(-1) * x.view(shape), dim=2)
+                                  <span class="comment"># <span class="shape">[b, s, 7168]</span> ← 加权合并4条流</span>
+    <span class="kw">return</span> y.to(dtype)
+
+<span class="comment"># 完整流程: hc_head → RMSNorm → F.linear(head_weight)</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x, hc_fn, hc_scale, hc_base, norm):
+    x = self.hc_head(x, hc_fn, hc_scale, hc_base)  <span class="comment"># [b,s,4,7168] → [b,s,7168]</span>
+    logits = self.get_logits(norm(x))                 <span class="comment"># → RMSNorm → [b, 129280/TP]</span>
+    <span class="kw">if</span> world_size > 1:
+        dist.all_gather(all_logits, logits)           <span class="comment"># TP all_gather</span>
+        logits = torch.cat(all_logits, dim=-1)        <span class="comment"># → [b, 129280]</span>
+    <span class="kw">return</span> logits</pre>
+</div>
+</details>
+
+<div class="info-box">
+  <strong>注意 get_logits 只取最后一个位置：</strong>
+  <code>get_logits(x)</code> 内部做 <code>F.linear(x[:, -1].float(), self.weight)</code>，
+  即只取序列最后位置的 hidden state 投影到词表。这在 autoregressive 推理中是正确的——
+  prefill 时只需要最后 token 的 logits，decode 时每步只有 1 个 token。
+</div>
+</section>
+
+<!-- ==================== SECTION: ROPE DETAIL ==================== -->
+<section id="rope-detail">
+<h2>RoPE / YaRN 频率插值细节</h2>
+<p>
+  DeepSeek-V4 使用<b>两套 RoPE 配置</b>：压缩注意力层（HCA/CSA, ratio>0）使用 <b>YaRN 频率插值</b>以支持 1M 上下文；
+  纯滑动窗口层（MTP, ratio=0）使用标准 RoPE（无 YaRN）。两套配置的关键差异：
+</p>
+
+<table class="config-table">
+<thead><tr><th>配置项</th><th>压缩层 (ratio>0)</th><th>纯滑窗层 (ratio=0)</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td class="key">rope_theta</td><td class="val">160000</td><td class="val">10000</td><td>压缩层用更大基频以适应长序列</td></tr>
+<tr><td class="key">original_seq_len</td><td class="val">65536</td><td class="val">0 (禁用 YaRN)</td><td>YaRN 原始训练长度</td></tr>
+<tr><td class="key">rope_factor</td><td class="val">16</td><td class="val">—</td><td>频率插值倍数</td></tr>
+<tr><td class="key">beta_fast / beta_slow</td><td class="val">32 / 1</td><td class="val">—</td><td>YaRN 平滑 ramp 参数</td></tr>
+</tbody>
+</table>
+<p><b>源码位置：</b><code>model.py</code> L199-229 (precompute_freqs_cis), L232-244 (apply_rotary_emb)</p>
+
+<details>
+<summary>YaRN 频率插值原理 · model.py L199-229</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L199-229</span>
+<span class="kw">def</span> <span class="fn">precompute_freqs_cis</span>(dim, seqlen, original_seq_len, base, factor, beta_fast, beta_slow):
+    <span class="comment"># 基础频率: θ_i = base^(-2i/dim), i = 0, 1, ..., dim/2-1</span>
+    freqs = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
+    <span class="comment"># 对 dim=64: 32 个频率, 从 1/base^0 = 1 到 1/base^(62/64)</span>
+
+    <span class="kw">if</span> original_seq_len > 0:   <span class="comment"># 启用 YaRN (仅压缩层)</span>
+        <span class="comment"># 找到需要插值的频率维度范围 [low, high]</span>
+        <span class="comment"># beta_fast=32: 低频端(对应长距离), 需要更多插值</span>
+        <span class="comment"># beta_slow=1:  高频端(对应短距离), 保持原始频率</span>
+        low, high = find_correction_range(beta_fast, beta_slow, dim, base, original_seq_len)
+        smooth = 1 - linear_ramp_factor(low, high, dim // 2)
+        <span class="comment"># smooth: [dim/2], 0→1 线性 ramp</span>
+        <span class="comment"># smooth=0: 完全插值 (freqs/factor) → 低频, 适合长距离</span>
+        <span class="comment"># smooth=1: 保持原始频率 → 高频, 保持局部精度</span>
+        freqs = freqs / factor * (1 - smooth) + freqs * smooth
+        <span class="comment"># 最终: 低频维度被 /factor 压缩 → 支持更长序列</span>
+        <span class="comment"># 高频维度保持不变 → 局部位置编码精度不损失</span>
+
+    t = torch.arange(seqlen)
+    freqs = torch.outer(t, freqs)              <span class="comment"># [seqlen, dim/2]</span>
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    <span class="comment"># 复数表示: exp(i*θ), 用于高效旋转</span>
+    <span class="kw">return</span> freqs_cis</pre>
+</div>
+</details>
+
+<details>
+<summary>apply_rotary_emb — 旋转嵌入应用 · model.py L232-244</summary>
+<div class="details-content">
+<pre><span class="file-tag">model.py L232-244</span>
+<span class="kw">def</span> <span class="fn">apply_rotary_emb</span>(x, freqs_cis, inverse=False):
+    <span class="comment"># x: <span class="shape">[b, s, (h,) rope_dim]</span> ← 仅后 64 维应用 RoPE</span>
+    <span class="comment"># 原位操作: 直接修改输入张量</span>
+    y = x
+    x = torch.view_as_complex(x.float().unflatten(-1, (-1, 2)))
+    <span class="comment"># <span class="shape">[..., 64]</span> → <span class="shape">[..., 32]</span> complex</span>
+    <span class="kw">if</span> inverse:
+        freqs_cis = freqs_cis.conj()   <span class="comment"># 反旋转: 用共轭复数</span>
+    x = torch.view_as_real(x * freqs_cis).flatten(-2)
+    <span class="comment"># 复数乘法 = 旋转, 展回实数</span>
+    y.copy_(x)   <span class="comment"># 原位写回!</span>
+    <span class="kw">return</span> y
+
+<span class="comment"># 使用位置:</span>
+<span class="comment"># Q: q[..., -64:] → 仅后64维(rope_head_dim)用RoPE, 前448维(nope_head_dim)不旋转</span>
+<span class="comment"># KV: kv[..., -64:] → 同样仅后64维</span>
+<span class="comment"># O: apply_rotary_emb(o[..., -64:], freqs, inverse=True) → 反旋转输出</span></pre>
+</div>
+</details>
+
+<div class="info-box warn">
+  <strong>反旋转输出（de-rotation）的作用：</strong>
+  联合 KV latent 中 KV 不拆分 K 和 V，RoPE 只应用于部分维度。
+  attention 输出 <code>o = softmax(Q×KV^T) × KV</code> 的后 64 维会带有 K 的 RoPE 旋转。
+  对输出做 <code>apply_rotary_emb(inverse=True)</code> 消除这个旋转偏移，
+  使后续 O 投影看到位置无关的表示。这是联合 KV latent attention 的关键步骤（model.py L534）。
+</div>
+</section>
+
+<!-- ==================== SECTION 9: INFERENCE ==================== -->
+<section id="inference">
+<h2>推理管线 (Inference Pipeline)</h2>
+<p><b>源码位置：</b><code>generate.py</code> 全文 155 行</p>
+
+<!-- Inference Pipeline SVG -->
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;">
+  <defs><marker id="a5" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><path d="M0,0 L7,2.5 L0,5Z" fill="var(--accent)"/></marker></defs>
+  <text x="390" y="20" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">推理流程 (generate.py)</text>
+
+  <!-- Steps -->
+  <rect x="20" y="40" width="120" height="50" rx="6" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="1.5"/>
+  <text x="80" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="var(--svg-text)">1. 初始化</text>
+  <text x="80" y="76" text-anchor="middle" font-size="8" fill="var(--text-muted)">NCCL · BF16 · CUDA</text>
+  <text x="80" y="86" text-anchor="middle" font-size="8" fill="var(--text-muted)">model + tokenizer</text>
+
+  <rect x="170" y="40" width="120" height="50" rx="6" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="1.5"/>
+  <text x="230" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="var(--svg-text)">2. Tokenize</text>
+  <text x="230" y="76" text-anchor="middle" font-size="8" fill="var(--text-muted)">encode_messages()</text>
+  <text x="230" y="86" text-anchor="middle" font-size="8" fill="var(--text-muted)">chat template</text>
+
+  <rect x="320" y="40" width="130" height="50" rx="6" fill="var(--svg-csa-fill)" stroke="var(--success)" stroke-width="1.5"/>
+  <text x="385" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="var(--success)">3. Prefill</text>
+  <text x="385" y="76" text-anchor="middle" font-size="8" fill="var(--text-muted)">model(tokens[:, :min_len])</text>
+  <text x="385" y="86" text-anchor="middle" font-size="8" fill="var(--text-muted)">一次处理全部prompt</text>
+
+  <rect x="480" y="40" width="130" height="50" rx="6" fill="var(--svg-hca-fill)" stroke="var(--warning)" stroke-width="1.5"/>
+  <text x="545" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="var(--warning)">4. Decode Loop</text>
+  <text x="545" y="76" text-anchor="middle" font-size="8" fill="var(--text-muted)">逐token生成</text>
+  <text x="545" y="86" text-anchor="middle" font-size="8" fill="var(--text-muted)">KV cache 增量</text>
+
+  <rect x="640" y="40" width="120" height="50" rx="6" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="1.5"/>
+  <text x="700" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="var(--svg-text)">5. 后处理</text>
+  <text x="700" y="76" text-anchor="middle" font-size="8" fill="var(--text-muted)">截断 EOS</text>
+  <text x="700" y="86" text-anchor="middle" font-size="8" fill="var(--text-muted)">decode → text</text>
+
+  <line x1="140" y1="65" x2="168" y2="65" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#a5)"/>
+  <line x1="290" y1="65" x2="318" y2="65" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#a5)"/>
+  <line x1="450" y1="65" x2="478" y2="65" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#a5)"/>
+  <line x1="610" y1="65" x2="638" y2="65" stroke="var(--accent)" stroke-width="1.2" marker-end="url(#a5)"/>
+
+  <!-- Loop arrow -->
+  <path d="M560,90 Q560,110 530,110 L500,110 Q480,110 480,90" fill="none" stroke="var(--warning)" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#a5)"/>
+
+  <!-- Sampling detail -->
+  <rect x="200" y="130" width="380" height="70" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="390" y="150" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">Gumbel-Max 采样</text>
+  <text x="390" y="168" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--accent)">probs = softmax(logits / temperature)</text>
+  <text x="390" y="184" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--accent)">token = argmax(probs / Exponential(1))</text>
+  <text x="390" y="196" text-anchor="middle" font-size="9" fill="var(--text-muted)">等价于 multinomial 采样，但避免 GPU→CPU 同步</text>
+
+  <!-- KV Cache detail -->
+  <rect x="200" y="215" width="380" height="55" rx="6" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="390" y="235" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">KV Cache 管理</text>
+  <text x="390" y="252" text-anchor="middle" font-size="10" fill="var(--text-secondary)">滑动窗口 (128) 使用取模写入: cache[pos % 128]</text>
+  <text x="390" y="266" text-anchor="middle" font-size="10" fill="var(--text-secondary)">压缩缓存: Compressor 增量追加 (每 ratio 个 token 产生一条)</text>
+</svg>
+</div>
+
+<details>
+<summary>generate() 完整代码解读 · generate.py L27-69</summary>
+<div class="details-content">
+<pre><span class="file-tag">generate.py L27-69</span>
+@torch.inference_mode()
+<span class="kw">def</span> <span class="fn">generate</span>(model, prompt_tokens, max_new_tokens, eos_id, temperature=1.0):
+    prompt_lens = [len(t) <span class="kw">for</span> t <span class="kw">in</span> prompt_tokens]
+    total_len = min(model.max_seq_len, max_new_tokens + max(prompt_lens))
+    tokens = torch.full((batch, total_len), -1, dtype=torch.long)
+    <span class="comment"># 右填充 -1, 不同长度 prompt 对齐</span>
+
+    prev_pos = 0
+    <span class="kw">for</span> cur_pos <span class="kw">in</span> range(min(prompt_lens), total_len):
+        <span class="comment"># 第一次: tokens[:, 0:min_len] → Prefill</span>
+        <span class="comment"># 之后:   tokens[:, prev:cur]   → Decode (1 token)</span>
+        logits = model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+        <span class="comment"># logits: <span class="shape">[b, vocab_size=129280]</span> — 只返回最后位置</span>
+
+        <span class="kw">if</span> temperature > 0:
+            next_token = sample(logits, temperature)   <span class="comment"># Gumbel-max</span>
+        <span class="kw">else</span>:
+            next_token = logits.argmax(dim=-1)         <span class="comment"># Greedy</span>
+
+        <span class="comment"># 对仍在 prompt 范围内的位置,用 ground truth 覆盖</span>
+        next_token = torch.where(prompt_mask[:, cur_pos], tokens[:, cur_pos], next_token)
+        tokens[:, cur_pos] = next_token
+        finished |= (~prompt_mask[:, cur_pos]) & (next_token == eos_id)
+        prev_pos = cur_pos
+        <span class="kw">if</span> finished.all(): <span class="kw">break</span></pre>
+</div>
+</details>
+</section>
+
+<!-- ==================== SECTION 10: CONVERT ==================== -->
+<section id="convert">
+<h2>权重转换 (Weight Conversion)</h2>
+<p>
+  <code>convert.py</code> 将 HuggingFace 格式的 checkpoint 转换为本推理框架的格式，
+  主要包括：名称映射、张量并行分片、FP4→FP8 格式转换（可选）、wo_a 反量化。
+</p>
+<p><b>源码位置：</b><code>convert.py</code> 全文 168 行</p>
+
+<h4>张量并行 (TP) 分片策略</h4>
+<table class="config-table">
+<thead><tr><th>参数</th><th>分片维度</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td class="key">embed (vocab embedding)</td><td class="val">dim=0</td><td>vocab 维度均分</td></tr>
+<tr><td class="key">wq_b, wkv_b (Col Parallel)</td><td class="val">dim=0</td><td>输出维度均分</td></tr>
+<tr><td class="key">wo_b, w2 (Row Parallel)</td><td class="val">dim=1</td><td>输入维度均分，输出 all_reduce</td></tr>
+<tr><td class="key">w1, w3 (Gate/Up FFN)</td><td class="val">dim=0</td><td>中间维度均分</td></tr>
+<tr><td class="key">Experts</td><td class="val">expert-level</td><td>每 rank 持有 384/TP 个完整专家</td></tr>
+<tr><td class="key">attn_norm, ffn_norm, etc.</td><td class="val">不分片</td><td>每 rank 持有完整副本</td></tr>
+</tbody>
+</table>
+
+<h4>FP4→FP8 转换 (cast_e2m1fn_to_e4m3fn)</h4>
+<div class="info-box">
+  <strong>无损转换原理：</strong> FP4 (E2M1) 最大值 6.0，乘以 per-32 E8M0 scale 后，最大 <code>6.0 × 2^6 = 384 < 448</code> (FP8 max)。
+  所以可以将 FP4 值 × (原 scale / 新 block-scale) 得到一个 FP8 可精确表示的值，同时用更粗粒度的 per-128×128 block scale。
+</div>
+
+<h4 id="convert-woa">wo_a 反量化 (关键转换步骤)</h4>
+<p>
+  <code>wo_a</code>（Attention 输出的分组低秩投影权重）在 checkpoint 中以 FP8 存储，但在推理代码中以 <b>BF16</b> 使用
+  （因为它通过 einsum 操作而非 fp8_gemm 调用）。convert.py 在转换时将其<b>预反量化</b>为 BF16：
+</p>
+
+<details>
+<summary>wo_a 反量化代码 · convert.py L137-141</summary>
+<div class="details-content">
+<pre><span class="file-tag">convert.py L137-141</span>
+<span class="kw">if</span> name.endswith(<span class="str">"wo_a.weight"</span>):
+    weight = state_dicts[i][name]
+    scale = state_dicts[i].pop(name.replace(<span class="str">"weight"</span>, <span class="str">"scale"</span>))
+    <span class="comment"># weight: <span class="shape">[N, K]</span> FP8,  scale: <span class="shape">[N//128, K//128]</span> E8M0</span>
+    <span class="comment"># 重塑为 block 结构: [N//128, 128, K//128, 128]</span>
+    weight = weight.unflatten(0, (-1, 128)).unflatten(-1, (-1, 128)).float()
+    <span class="comment"># × scale[:, None, :, None] → 每 128×128 block 乘以对应 scale</span>
+    weight = weight * scale[:, None, :, None].float()
+    <span class="comment"># 展平回 [N, K] 并转为 BF16 — 预反量化完成</span>
+    state_dicts[i][name] = weight.flatten(2, 3).flatten(0, 1).bfloat16()
+    <span class="comment"># 注意: 同时 pop 掉了 scale, 推理时 wo_a 直接用 BF16</span></pre>
+</div>
+</details>
+
+<div class="info-box">
+  <strong>为什么 wo_a 要预反量化？</strong>
+  在 Attention O 路径（model.py L537-541）中，wo_a 通过 <code>torch.einsum("bsgd,grd->bsgr")</code> 做分组矩阵乘。
+  这个 einsum 操作无法使用 fp8_gemm kernel（后者只支持标准 2D GEMM），
+  所以 wo_a 在权重转换时就预先反量化为 BF16，运行时直接 <code>F.linear</code> 路径。
+  这是<b>唯一</b>一个走 BF16 计算路径的注意力权重。
+</div>
+</section>
+
+</main>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+// ===== Theme Toggle =====
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.getElementById('themeToggle').textContent = next === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('theme', next);
+}
+// Restore theme
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved) {
+    document.documentElement.setAttribute('data-theme', saved);
+    const btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = saved === 'dark' ? '☀️' : '🌙';
+  }
+})();
+
+// ===== Sidebar Active Highlight =====
+(function() {
+  const sections = document.querySelectorAll('section[id], h3[id], h4[id]');
+  const navLinks = document.querySelectorAll('.sidebar-nav a');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const target = document.querySelector(`.sidebar-nav a[href="#${entry.target.id}"]`);
+        if (target) target.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+  sections.forEach(s => observer.observe(s));
+})();
+
+// ===== Search =====
+function handleSearch(query) {
+  const results = document.getElementById('searchResults');
+  if (!query || query.length < 2) { results.classList.remove('show'); return; }
+  const q = query.toLowerCase();
+  const searchable = [
+    { id: 'overview', title: '模型总览', keywords: '参数 config 架构 overview' },
+    { id: 'config-map', title: '超参数映射', keywords: 'config json 超参数 映射 hidden_size' },
+    { id: 'mhc', title: '流形约束超连接 mHC', keywords: 'hyper connection 超连接 残差 sinkhorn 双随机' },
+    { id: 'mhc-pre', title: 'hc_pre 预组合', keywords: 'pre combination 预组合 加权求和' },
+    { id: 'mhc-post', title: 'hc_post 后组合', keywords: 'post combination 后组合 门控' },
+    { id: 'sinkhorn', title: 'Sinkhorn 核', keywords: 'sinkhorn 双随机 迭代 行列归一化' },
+    { id: 'attention', title: '混合注意力', keywords: 'attention 注意力 hybrid HCA CSA MLA 压缩 稀疏' },
+    { id: 'attn-layers', title: '61层类型分布', keywords: '层 类型 分布 compress_ratio HCA CSA' },
+    { id: 'attn-hca-csa', title: 'HCA vs CSA 对比', keywords: 'HCA CSA 对比 Indexer overlap 压缩 ratio 128 4' },
+    { id: 'sparse-attn', title: '稀疏注意力核', keywords: 'sparse attention 稀疏 flash online softmax sink' },
+    { id: 'compressor', title: 'KV 压缩器', keywords: 'compressor 压缩 池化 overlap 门控' },
+    { id: 'indexer', title: '稀疏索引器', keywords: 'indexer 索引 hadamard topk fp4' },
+    { id: 'moe', title: 'MoE 模块', keywords: 'moe expert 专家 混合 路由' },
+    { id: 'gate', title: 'Gate 路由', keywords: 'gate 路由 sqrtsoftplus hash bias' },
+    { id: 'expert', title: 'Expert FFN', keywords: 'expert swiglu ffn w1 w2 w3' },
+    { id: 'quant', title: '量化系统', keywords: 'quant 量化 fp4 fp8 bf16 kernel tilelang' },
+    { id: 'act-quant', title: 'FP8 激活量化', keywords: 'act_quant 激活 fp8 block scale' },
+    { id: 'fp8-gemm', title: 'FP8 GEMM', keywords: 'fp8_gemm 矩阵乘 双累加器' },
+    { id: 'fp4-gemm', title: 'FP4 GEMM', keywords: 'fp4_gemm 混合精度 e2m1' },
+    { id: 'mtp', title: 'Multi-Token Prediction', keywords: 'mtp 多token预测 辅助任务' },
+    { id: 'inference', title: '推理管线', keywords: 'inference generate 推理 采样 gumbel kv cache' },
+    { id: 'convert', title: '权重转换', keywords: 'convert 转换 tp 分片 safetensors' },
+    { id: 'convert-woa', title: 'wo_a 反量化', keywords: 'wo_a 反量化 dequant bf16 einsum' },
+    { id: 'linear-dispatch', title: '线性层精度分发', keywords: 'linear dispatch fp4 fp8 bf16 act_quant weight dtype 分发' },
+    { id: 'parallel-head', title: 'ParallelHead 输出', keywords: 'parallel head hc_head logits 输出 简化 sigmoid' },
+    { id: 'rope-detail', title: 'RoPE / YaRN 细节', keywords: 'rope yarn 频率 插值 rotary embedding 旋转 de-rotation' },
+    { id: 'compressor-decode', title: 'Compressor Decode 路径', keywords: 'compressor decode 增量 状态 state overlap' },
+    { id: 'kv-layout', title: 'KV 缓存布局', keywords: 'kv cache 缓存 布局 滑动窗口 压缩 memory layout' },
+  ];
+  const matches = searchable.filter(s =>
+    s.title.toLowerCase().includes(q) || s.keywords.toLowerCase().includes(q)
+  );
+  if (matches.length === 0) { results.classList.remove('show'); return; }
+  results.innerHTML = matches.map(m =>
+    `<div class="search-result-item" onclick="document.getElementById('${m.id}').scrollIntoView({behavior:'smooth'});document.getElementById('searchResults').classList.remove('show');document.getElementById('searchInput').value='';">
+      <span class="match">${m.title}</span>
+    </div>`
+  ).join('');
+  results.classList.add('show');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-box') && !e.target.closest('.search-results')) {
+    document.getElementById('searchResults').classList.remove('show');
+  }
+});
+
+// ===== Layer Map =====
+(function() {
+  const ratios = [128,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,0];
+  const map = document.getElementById('layerMap');
+  ratios.forEach((r, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'layer-cell ' + (r === 128 ? 'hca' : r === 4 ? 'csa' : r === 0 ? 'sw' : 'hca');
+    cell.textContent = i;
+    cell.innerHTML += `<div class="layer-tooltip">Layer ${i} · ratio=${r} · ${r===128?'HCA':r===4?'CSA':'纯滑窗'}</div>`;
+    map.appendChild(cell);
+  });
+})();
+
+// ===== Sinkhorn Demo =====
+let sinkhornMatrix, sinkhornIter, sinkhornAutoId;
+function sinkhornReset() {
+  clearInterval(sinkhornAutoId);
+  sinkhornIter = 0;
+  // Random positive matrix
+  sinkhornMatrix = Array.from({length:4}, () => Array.from({length:4}, () => Math.random() * 2 + 0.5));
+  // softmax rows
+  sinkhornMatrix = sinkhornMatrix.map(row => {
+    const mx = Math.max(...row);
+    const exps = row.map(v => Math.exp(v - mx));
+    const s = exps.reduce((a,b) => a+b);
+    return exps.map(e => e/s + 1e-6);
+  });
+  sinkhornRender();
+  document.getElementById('sinkhornLabel').textContent = '初始 softmax 归一化';
+}
+function sinkhornStep() {
+  if (!sinkhornMatrix) sinkhornReset();
+  const eps = 1e-6;
+  if (sinkhornIter % 2 === 0) {
+    // Column normalize
+    for (let j=0;j<4;j++) {
+      let s=0; for(let i=0;i<4;i++) s+=sinkhornMatrix[i][j];
+      for(let i=0;i<4;i++) sinkhornMatrix[i][j] /= (s+eps);
+    }
+    document.getElementById('sinkhornLabel').textContent = `迭代 ${Math.floor(sinkhornIter/2)+1} · 列归一化`;
+  } else {
+    // Row normalize
+    for (let i=0;i<4;i++) {
+      let s=0; for(let j=0;j<4;j++) s+=sinkhornMatrix[i][j];
+      for(let i2=0;i2<4;i2++) sinkhornMatrix[i][i2] /= (s+eps);
+    }
+    document.getElementById('sinkhornLabel').textContent = `迭代 ${Math.floor(sinkhornIter/2)+1} · 行归一化`;
+  }
+  sinkhornIter++;
+  sinkhornRender();
+}
+function sinkhornAutoPlay() {
+  if (!sinkhornMatrix) sinkhornReset();
+  clearInterval(sinkhornAutoId);
+  sinkhornAutoId = setInterval(() => {
+    if (sinkhornIter >= 40) { clearInterval(sinkhornAutoId); return; }
+    sinkhornStep();
+  }, 400);
+}
+function sinkhornRender() {
+  const grid = document.getElementById('sinkhornGrid');
+  grid.innerHTML = '';
+  const m = sinkhornMatrix;
+  for (let i=0;i<4;i++) for (let j=0;j<4;j++) {
+    const cell = document.createElement('div');
+    cell.className = 'sinkhorn-cell';
+    const v = m[i][j];
+    const intensity = Math.min(v / 0.5, 1);
+    cell.style.background = `rgba(66,99,235,${intensity * 0.8 + 0.1})`;
+    cell.style.color = intensity > 0.4 ? 'white' : 'var(--text)';
+    cell.textContent = v.toFixed(3);
+    grid.appendChild(cell);
+  }
+  // Row/Col sums
+  const sums = document.getElementById('sinkhornSums');
+  let html = '<b>行和:</b><br>';
+  for (let i=0;i<4;i++) {
+    const s = m[i].reduce((a,b)=>a+b);
+    html += `  行${i}: <span style="color:${Math.abs(s-1)<0.01?'var(--success)':'var(--danger)'}">${s.toFixed(4)}</span><br>`;
+  }
+  html += '<b>列和:</b><br>';
+  for (let j=0;j<4;j++) {
+    let s=0; for(let i=0;i<4;i++) s+=m[i][j];
+    html += `  列${j}: <span style="color:${Math.abs(s-1)<0.01?'var(--success)':'var(--danger)'}">${s.toFixed(4)}</span><br>`;
+  }
+  sums.innerHTML = html;
+}
+sinkhornReset();
+
+// ===== Keyboard shortcuts =====
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !e.target.closest('input')) {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('searchResults').classList.remove('show');
+    document.getElementById('searchInput').blur();
+  }
+});
+</script>
+</body>
+</html>

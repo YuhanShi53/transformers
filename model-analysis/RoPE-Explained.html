@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoPE 旋转位置编码 — 原理详解</title>
+<style>
+:root {
+  --bg: #ffffff; --bg-alt: #f8f9fa; --bg-card: #ffffff;
+  --text: #1a1a2e; --text-secondary: #495057; --text-muted: #868e96;
+  --border: #dee2e6; --border-light: #e9ecef;
+  --accent: #364fc7; --accent-light: #edf2ff;
+  --shape-color: #e64980; --dim-color: #0c8599; --dtype-color: #7048e8;
+  --green: #2b8a3e; --green-bg: #ebfbee;
+  --orange: #e67700; --orange-bg: #fff9db;
+  --red: #c92a2a; --red-bg: #fff5f5;
+  --purple: #7048e8; --purple-bg: #f3f0ff;
+  --teal: #0c8599; --teal-bg: #e6fcf5;
+  --pink: #e64980; --pink-bg: #fff0f6;
+  --sidebar-bg: #f1f3f5; --sidebar-active: #364fc7;
+  --code-bg: #f1f3f5; --code-border: #dee2e6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,0.12);
+  --svg-node-fill: #edf2ff; --svg-node-stroke: #364fc7;
+  --svg-rotate-fill: #fff0f6; --svg-rotate-stroke: #e64980;
+  --svg-freq-fill: #e6fcf5; --svg-freq-stroke: #0c8599;
+  --svg-arrow: #495057;
+  --radius: 8px;
+}
+[data-theme="dark"] {
+  --bg: #1a1b26; --bg-alt: #24283b; --bg-card: #24283b;
+  --text: #c0caf5; --text-secondary: #a9b1d6; --text-muted: #565f89;
+  --border: #3b4261; --border-light: #2f3549;
+  --accent: #7aa2f7; --accent-light: #1a1b2e;
+  --sidebar-bg: #1f2335; --sidebar-active: #7aa2f7;
+  --code-bg: #1f2335; --code-border: #3b4261;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,0.4);
+  --svg-node-fill: #1f2335; --svg-node-stroke: #7aa2f7;
+  --svg-rotate-fill: #2d2040; --svg-rotate-stroke: #bb9af7;
+  --svg-freq-fill: #1a2e2e; --svg-freq-stroke: #73daca;
+  --svg-arrow: #a9b1d6;
+  --green: #73daca; --green-bg: #1a2e2e;
+  --orange: #ff9e64; --orange-bg: #2e2a1a;
+  --red: #f7768e; --red-bg: #2e1a1e;
+  --purple: #bb9af7; --purple-bg: #2d2040;
+  --teal: #73daca; --teal-bg: #1a2e2e;
+  --pink: #f7768e; --pink-bg: #2e1a1e;
+  --shape-color: #f7768e; --dim-color: #73daca; --dtype-color: #bb9af7;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; background:var(--bg); color:var(--text); line-height:1.7; }
+
+/* Sidebar */
+.sidebar { position:fixed; left:0; top:0; bottom:0; width:280px; background:var(--sidebar-bg); border-right:1px solid var(--border); overflow-y:auto; z-index:100; padding:20px 0; }
+.sidebar-title { padding:0 20px 16px; font-size:15px; font-weight:700; color:var(--accent); letter-spacing:0.5px; }
+.sidebar a { display:block; padding:7px 20px 7px 24px; color:var(--text-secondary); text-decoration:none; font-size:13.5px; border-left:3px solid transparent; transition: all 0.2s; }
+.sidebar a:hover { background:var(--accent-light); color:var(--accent); }
+.sidebar a.active { border-left-color:var(--sidebar-active); color:var(--sidebar-active); font-weight:600; background:var(--accent-light); }
+.sidebar a.sub { padding-left:40px; font-size:12.5px; color:var(--text-muted); }
+
+/* Topbar */
+.topbar { position:fixed; top:0; left:280px; right:0; height:52px; background:var(--bg); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 24px; gap:12px; z-index:99; }
+.search-box { flex:1; max-width:400px; padding:7px 14px; border:1px solid var(--border); border-radius:20px; background:var(--bg-alt); color:var(--text); font-size:13px; outline:none; }
+.search-box:focus { border-color:var(--accent); }
+.search-results { position:absolute; top:46px; left:24px; width:400px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-hover); display:none; max-height:300px; overflow-y:auto; z-index:200; }
+.search-results.show { display:block; }
+.search-results a { display:block; padding:10px 16px; color:var(--text); text-decoration:none; font-size:13px; border-bottom:1px solid var(--border-light); }
+.search-results a:hover { background:var(--accent-light); }
+.theme-btn { background:none; border:1px solid var(--border); border-radius:20px; padding:6px 14px; cursor:pointer; font-size:13px; color:var(--text-secondary); }
+.theme-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* Main */
+.main { margin-left:280px; padding:72px 48px 80px; max-width:920px; }
+section { margin-bottom:56px; scroll-margin-top:68px; }
+h1 { font-size:32px; font-weight:800; margin-bottom:8px; background:linear-gradient(135deg, var(--accent), var(--pink)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.subtitle { color:var(--text-muted); font-size:15px; margin-bottom:36px; }
+h2 { font-size:22px; font-weight:700; margin-bottom:16px; padding-bottom:8px; border-bottom:2px solid var(--accent); color:var(--text); }
+h3 { font-size:17px; font-weight:600; margin:24px 0 12px; color:var(--text); }
+p { margin-bottom:14px; color:var(--text-secondary); }
+strong { color:var(--text); }
+
+/* Cards & boxes */
+.info-box { background:var(--accent-light); border:1px solid var(--accent); border-radius:var(--radius); padding:16px 20px; margin:16px 0; }
+.info-box.green { background:var(--green-bg); border-color:var(--green); }
+.info-box.orange { background:var(--orange-bg); border-color:var(--orange); }
+.info-box.pink { background:var(--pink-bg); border-color:var(--pink); }
+.info-box.purple { background:var(--purple-bg); border-color:var(--purple); }
+.info-box .box-title { font-weight:700; font-size:14px; margin-bottom:6px; }
+.info-box p { margin-bottom:6px; font-size:14px; }
+
+.metrics-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:14px; margin:20px 0; }
+.metric-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:18px; text-align:center; box-shadow:var(--shadow); }
+.metric-card.purple { border-left:4px solid var(--purple); }
+.metric-card.teal { border-left:4px solid var(--teal); }
+.metric-card.pink { border-left:4px solid var(--pink); }
+.metric-card.green { border-left:4px solid var(--green); }
+.metric-value { font-size:26px; font-weight:800; color:var(--accent); }
+.metric-card.purple .metric-value { color:var(--purple); }
+.metric-card.teal .metric-value { color:var(--teal); }
+.metric-card.pink .metric-value { color:var(--pink); }
+.metric-card.green .metric-value { color:var(--green); }
+.metric-label { font-size:12px; color:var(--text-muted); margin-top:4px; }
+
+/* Code */
+pre { background:var(--code-bg); border:1px solid var(--code-border); border-radius:var(--radius); padding:16px 20px; overflow-x:auto; font-size:13px; line-height:1.65; margin:14px 0; font-family:"SF Mono","Fira Code",Consolas,monospace; }
+code { font-family:"SF Mono","Fira Code",Consolas,monospace; font-size:13px; }
+p code, li code { background:var(--code-bg); padding:2px 6px; border-radius:4px; font-size:12.5px; color:var(--pink); }
+.kw { color:var(--purple); font-weight:600; }
+.fn { color:var(--accent); }
+.str { color:var(--green); }
+.num { color:var(--orange); }
+.comment { color:var(--text-muted); font-style:italic; }
+.shape { color:var(--shape-color); font-weight:700; font-style:italic; }
+.dtype { color:var(--dtype-color); font-weight:600; }
+.dim { color:var(--dim-color); font-weight:600; }
+
+/* Math */
+.math-block { background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:20px 24px; margin:18px 0; text-align:center; font-size:16px; overflow-x:auto; }
+.math-block .equation { font-family:"Times New Roman",serif; font-size:18px; line-height:2; }
+.math-inline { font-family:"Times New Roman",serif; font-style:italic; color:var(--text); }
+.math-block .label { display:block; font-size:12px; color:var(--text-muted); margin-top:8px; font-family:-apple-system,sans-serif; font-style:normal; }
+
+/* Tables */
+table { width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px; }
+th { background:var(--bg-alt); font-weight:600; text-align:left; padding:10px 14px; border:1px solid var(--border); }
+td { padding:10px 14px; border:1px solid var(--border); }
+tr:hover td { background:var(--accent-light); }
+.tensor-shape { color:var(--shape-color); font-weight:600; font-family:monospace; }
+
+/* SVG */
+.diagram-container { margin:20px 0; text-align:center; }
+.diagram-container svg { max-width:100%; height:auto; }
+svg text { font-family:-apple-system,sans-serif; }
+
+/* Details */
+details { border:1px solid var(--border); border-radius:var(--radius); margin:14px 0; }
+details summary { padding:12px 16px; cursor:pointer; font-weight:600; font-size:14px; background:var(--bg-alt); border-radius:var(--radius); }
+details[open] summary { border-bottom:1px solid var(--border); border-radius:var(--radius) var(--radius) 0 0; }
+details .detail-content { padding:16px; }
+
+/* Interactive demos */
+.demo-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin:20px 0; box-shadow:var(--shadow); }
+.demo-panel h4 { font-size:15px; margin-bottom:14px; color:var(--accent); }
+.slider-row { display:flex; align-items:center; gap:12px; margin:10px 0; flex-wrap:wrap; }
+.slider-row label { font-size:13px; color:var(--text-secondary); min-width:100px; }
+.slider-row input[type=range] { flex:1; min-width:150px; accent-color:var(--accent); }
+.slider-row .val { font-size:13px; font-weight:700; color:var(--accent); min-width:50px; }
+canvas { border:1px solid var(--border); border-radius:var(--radius); display:block; margin:10px auto; background:var(--bg); }
+.btn { display:inline-block; padding:7px 18px; border:1px solid var(--accent); background:var(--accent-light); color:var(--accent); border-radius:20px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s; }
+.btn:hover { background:var(--accent); color:#fff; }
+.btn-group { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+
+/* Comparison */
+.comparison { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0; }
+.comparison > div { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+.comparison h4 { font-size:14px; margin-bottom:8px; }
+@media(max-width:700px) { .comparison { grid-template-columns:1fr; } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+/* Responsive */
+@media(max-width:900px) {
+  .sidebar { display:none; }
+  .topbar { left:0; }
+  .main { margin-left:0; padding:68px 20px 60px; }
+}
+
+/* Animations */
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+section { animation: fadeIn 0.4s ease-out; }
+
+/* Step visualization */
+.step-flow { display:flex; align-items:center; gap:0; margin:16px 0; flex-wrap:wrap; justify-content:center; }
+.step-item { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; text-align:center; min-width:100px; }
+.step-item .step-num { font-size:11px; color:var(--text-muted); }
+.step-item .step-text { font-size:13px; font-weight:600; color:var(--text); }
+.step-arrow { font-size:20px; color:var(--text-muted); padding:0 4px; }
+
+/* List */
+ul, ol { margin:10px 0 14px 24px; }
+li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-title">RoPE 原理详解</div>
+  <a href="#overview">总览</a>
+  <a href="#why-position" class="sub">为什么需要位置编码</a>
+  <a href="#intuition">直觉理解</a>
+  <a href="#intuition-rotate" class="sub">旋转 = 位置</a>
+  <a href="#intuition-relative" class="sub">内积保留相对关系</a>
+  <a href="#math">数学原理</a>
+  <a href="#math-2d" class="sub">2D 旋转矩阵</a>
+  <a href="#math-nd" class="sub">高维推广</a>
+  <a href="#math-complex" class="sub">复数形式</a>
+  <a href="#math-qk" class="sub">Q·K 内积推导</a>
+  <a href="#frequency">频率设计</a>
+  <a href="#freq-base" class="sub">频率基底 &theta;</a>
+  <a href="#freq-extrapolation" class="sub">长度外推</a>
+  <a href="#advantages">关键优势</a>
+  <a href="#code">代码实现</a>
+  <a href="#code-precompute" class="sub">频率预计算</a>
+  <a href="#code-apply" class="sub">应用旋转</a>
+  <a href="#code-full" class="sub">完整实现</a>
+  <a href="#demo-rotation">交互: 旋转可视化</a>
+  <a href="#demo-frequency">交互: 频率探索器</a>
+  <a href="#demo-dotproduct">交互: 内积衰减</a>
+  <a href="#variants">RoPE 变体</a>
+  <a href="#summary">总结</a>
+</nav>
+
+<!-- Topbar -->
+<div class="topbar">
+  <input type="text" class="search-box" id="searchInput" placeholder="搜索...  (旋转 / 频率 / 外推 / 代码)">
+  <div class="search-results" id="searchResults"></div>
+  <button class="theme-btn" id="themeToggle" onclick="toggleTheme()">Dark</button>
+</div>
+
+<!-- Main -->
+<main class="main">
+
+<!-- ==================== 1. 总览 ==================== -->
+<section id="overview">
+<h1>RoPE: 旋转位置编码</h1>
+<p class="subtitle">Rotary Position Embedding — 让 Transformer 理解 token 顺序的优雅方案</p>
+
+<div class="metrics-grid">
+  <div class="metric-card purple">
+    <div class="metric-value">2021</div>
+    <div class="metric-label">RoFormer 论文提出</div>
+  </div>
+  <div class="metric-card teal">
+    <div class="metric-value">旋转</div>
+    <div class="metric-label">核心思想</div>
+  </div>
+  <div class="metric-card pink">
+    <div class="metric-value">相对</div>
+    <div class="metric-label">位置编码类型</div>
+  </div>
+  <div class="metric-card green">
+    <div class="metric-value">100%</div>
+    <div class="metric-label">主流 LLM 采用率</div>
+  </div>
+</div>
+
+<p>RoPE (Rotary Position Embedding) 由苏剑林在 2021 年的 RoFormer 论文中提出。它通过<strong>旋转变换</strong>将位置信息注入到 Query 和 Key 向量中，使得两个 token 的注意力分数<strong>仅取决于它们的相对距离</strong>，而非绝对位置。</p>
+
+<p>如今，几乎所有主流大语言模型（LLaMA、GPT-NeoX、Qwen、DeepSeek、Mistral 等）都使用 RoPE 作为位置编码方案。</p>
+
+<div id="why-position"></div>
+<h3>为什么 Transformer 需要位置编码？</h3>
+
+<p>Transformer 的自注意力机制本质上是一个<strong>集合操作</strong>（set operation）——它对输入 token 做加权求和，但完全不关心 token 的顺序。如果不加位置编码，"猫追狗" 和 "狗追猫" 在 Transformer 眼中是完全一样的。</p>
+
+<div class="comparison">
+  <div>
+    <h4 style="color:var(--red)">没有位置编码</h4>
+    <p style="font-size:13px">Attention(Q, K, V) 的结果与输入顺序无关。对于排列 &pi;：</p>
+    <p style="font-size:13px;font-family:serif;font-style:italic;text-align:center">Attention(&pi;(X)) = &pi;(Attention(X))</p>
+    <p style="font-size:13px">"I love you" = "you love I" = "love I you"</p>
+  </div>
+  <div>
+    <h4 style="color:var(--green)">有位置编码</h4>
+    <p style="font-size:13px">位置编码打破了排列等变性，使模型能区分不同顺序：</p>
+    <p style="font-size:13px;font-family:serif;font-style:italic;text-align:center">f(x, pos) &ne; f(x, pos')</p>
+    <p style="font-size:13px">"I love you" &ne; "you love I"</p>
+  </div>
+</div>
+
+<h3>位置编码的演化</h3>
+<div class="step-flow">
+  <div class="step-item"><div class="step-num">第 1 代</div><div class="step-text">正弦编码</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">第 2 代</div><div class="step-text">可学习绝对编码</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">第 3 代</div><div class="step-text">ALiBi / 相对偏置</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item" style="border-color:var(--accent);background:var(--accent-light)"><div class="step-num">现代标准</div><div class="step-text" style="color:var(--accent)">RoPE</div></div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>方案</th><th>类型</th><th>编码方式</th><th>外推能力</th><th>代表模型</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Sinusoidal</td><td>绝对</td><td>加到嵌入上</td><td>差</td><td>原始 Transformer</td></tr>
+    <tr><td>Learned</td><td>绝对</td><td>加到嵌入上</td><td>无</td><td>GPT-2, BERT</td></tr>
+    <tr><td>ALiBi</td><td>相对</td><td>注意力偏置</td><td>良好</td><td>BLOOM</td></tr>
+    <tr style="background:var(--accent-light)"><td><strong>RoPE</strong></td><td><strong>相对</strong></td><td><strong>旋转 Q, K</strong></td><td><strong>优秀(可扩展)</strong></td><td><strong>LLaMA, Qwen, DS</strong></td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ==================== 2. 直觉理解 ==================== -->
+<section id="intuition">
+<h2>2. 直觉理解：为什么是旋转？</h2>
+
+<div id="intuition-rotate"></div>
+<h3>核心直觉：旋转角度 = 位置</h3>
+
+<p>想象一个时钟：时针指向不同的角度代表不同的时间。RoPE 的思路完全类似——<strong>把向量旋转不同的角度来表示不同的位置</strong>。</p>
+
+<ul>
+  <li>位置 0 的 token：不旋转（旋转 0&deg;）</li>
+  <li>位置 1 的 token：旋转 &theta;&deg;</li>
+  <li>位置 2 的 token：旋转 2&theta;&deg;</li>
+  <li>位置 <span class="math-inline">m</span> 的 token：旋转 <span class="math-inline">m&theta;&deg;</span></li>
+</ul>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 340" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowS" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="var(--svg-arrow)"/></marker>
+  </defs>
+  <!-- Coordinate system -->
+  <line x1="160" y1="180" x2="330" y2="180" stroke="var(--border)" stroke-width="1"/>
+  <line x1="160" y1="300" x2="160" y2="60" stroke="var(--border)" stroke-width="1"/>
+  <text x="335" y="184" fill="var(--text-muted)" font-size="12">x₁</text>
+  <text x="150" y="52" fill="var(--text-muted)" font-size="12">x₂</text>
+
+  <!-- Original vector (pos=0) -->
+  <line x1="160" y1="180" x2="290" y2="110" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrowS)"/>
+  <text x="295" y="105" fill="var(--accent)" font-size="13" font-weight="700">pos = 0</text>
+
+  <!-- Rotated vector (pos=1) -->
+  <line x1="160" y1="180" x2="240" y2="78" stroke="var(--pink)" stroke-width="2.5" marker-end="url(#arrowS)"/>
+  <text x="244" y="72" fill="var(--pink)" font-size="13" font-weight="700">pos = 1</text>
+
+  <!-- Rotated vector (pos=2) -->
+  <line x1="160" y1="180" x2="180" y2="68" stroke="var(--purple)" stroke-width="2.5" marker-end="url(#arrowS)"/>
+  <text x="170" y="58" fill="var(--purple)" font-size="13" font-weight="700">pos = 2</text>
+
+  <!-- Angle arc -->
+  <path d="M 250,140 A 60,60 0 0,0 220,105" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="248" y="118" fill="var(--orange)" font-size="12">&theta;</text>
+  <path d="M 220,105 A 65,65 0 0,0 195,90" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="215" y="88" fill="var(--orange)" font-size="12">&theta;</text>
+
+  <!-- Right side: key insight -->
+  <rect x="400" y="40" width="270" height="260" rx="10" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1"/>
+  <text x="420" y="72" fill="var(--text)" font-size="15" font-weight="700">核心洞察</text>
+
+  <text x="420" y="105" fill="var(--text-secondary)" font-size="13">同一个向量 q，在不同位置</text>
+  <text x="420" y="125" fill="var(--text-secondary)" font-size="13">被旋转不同角度：</text>
+
+  <text x="420" y="158" fill="var(--accent)" font-size="14" font-family="serif" font-style="italic">R(0) &middot; q = q</text>
+  <text x="420" y="183" fill="var(--pink)" font-size="14" font-family="serif" font-style="italic">R(&theta;) &middot; q</text>
+  <text x="420" y="208" fill="var(--purple)" font-size="14" font-family="serif" font-style="italic">R(2&theta;) &middot; q</text>
+
+  <text x="420" y="245" fill="var(--text-secondary)" font-size="13">旋转矩阵 R(m&theta;) 编码了</text>
+  <text x="420" y="265" fill="var(--text-secondary)" font-size="13">位置 m 的信息！</text>
+  <text x="420" y="288" fill="var(--green)" font-size="13" font-weight="600">且向量的模长不变</text>
+</svg>
+</div>
+
+<div id="intuition-relative"></div>
+<h3>为什么旋转能编码"相对"位置？</h3>
+
+<p>RoPE 最精妙的地方在于：当计算 Query 和 Key 的<strong>内积</strong>时，旋转角度的差值自然体现了两个 token 的<strong>相对距离</strong>。</p>
+
+<div class="math-block">
+  <div class="equation">
+    &langle; R(<span style="color:var(--pink)">m</span>&theta;) &middot; q, &nbsp; R(<span style="color:var(--teal)">n</span>&theta;) &middot; k &rangle;
+    &nbsp;=&nbsp;
+    &langle; R((<span style="color:var(--pink)">m</span> &minus; <span style="color:var(--teal)">n</span>)&theta;) &middot; q, &nbsp; k &rangle;
+  </div>
+  <span class="label">内积只依赖相对距离 (m &minus; n)，而非绝对位置 m 或 n</span>
+</div>
+
+<div class="info-box green">
+  <div class="box-title">直觉类比：音乐中的移调</div>
+  <p>两个音符之间的"音程"（相对关系）不会因为你把整首曲子移调而改变。C-E 是大三度，D-F# 也是大三度。RoPE 中的旋转就像移调——绝对"音高"（位置）变了，但两个 token 之间的"音程"（相对距离）保持不变。</p>
+</div>
+</section>
+
+<!-- ==================== 3. 数学原理 ==================== -->
+<section id="math">
+<h2>3. 数学原理</h2>
+
+<div id="math-2d"></div>
+<h3>3.1 从 2D 旋转矩阵开始</h3>
+
+<p>在二维平面上旋转一个向量 <span class="math-inline">(x₁, x₂)</span>，只需要乘以一个<strong>旋转矩阵</strong>：</p>
+
+<div class="math-block">
+  <div class="equation">
+    R(&theta;) = <span style="font-size:28px">(</span>
+    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.5">
+      cos&theta; &nbsp; &minus;sin&theta;<br>
+      sin&theta; &nbsp;&nbsp;&nbsp; cos&theta;
+    </span>
+    <span style="font-size:28px">)</span>
+  </div>
+  <span class="label">2D 旋转矩阵：将向量逆时针旋转 &theta; 角</span>
+</div>
+
+<p>关键性质：</p>
+<ul>
+  <li><strong>保范性</strong>：旋转不改变向量长度，<span class="math-inline">||R(&theta;)x|| = ||x||</span></li>
+  <li><strong>可加性</strong>：<span class="math-inline">R(&alpha;) &middot; R(&beta;) = R(&alpha; + &beta;)</span></li>
+  <li><strong>正交性</strong>：<span class="math-inline">R(&theta;)ᵀ = R(&minus;&theta;) = R(&theta;)⁻¹</span></li>
+</ul>
+
+<p>对于位置 <span class="math-inline">m</span> 的 token，RoPE 将其 Query/Key 向量旋转 <span class="math-inline">m&theta;</span> 角度：</p>
+
+<div class="math-block">
+  <div class="equation">
+    q'<sub>m</sub> = R(m&theta;) &middot; q<sub>m</sub> = <span style="font-size:28px">(</span>
+    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.5">
+      cos(m&theta;) &nbsp; &minus;sin(m&theta;)<br>
+      sin(m&theta;) &nbsp;&nbsp;&nbsp; cos(m&theta;)
+    </span>
+    <span style="font-size:28px">)</span>
+    <span style="font-size:28px">(</span>
+    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.3">
+      q₁<br>q₂
+    </span>
+    <span style="font-size:28px">)</span>
+  </div>
+</div>
+
+<div id="math-nd"></div>
+<h3>3.2 推广到高维：分组旋转</h3>
+
+<p>实际的 Query/Key 向量是 <span class="math-inline">d</span> 维的（如 128 维）。RoPE 将 <span class="math-inline">d</span> 维向量<strong>两两分组</strong>，每组用不同的频率旋转：</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- d-dimensional vector -->
+  <text x="30" y="30" fill="var(--text)" font-size="14" font-weight="700">d 维向量的分组旋转 (d=8 为例)</text>
+
+  <!-- Original vector boxes -->
+  <g transform="translate(30, 50)">
+    <text x="0" y="0" fill="var(--text-muted)" font-size="12">原始向量 q:</text>
+    <rect x="0" y="10" width="80" height="36" rx="4" fill="var(--pink-bg)" stroke="var(--pink)" stroke-width="1.5"/>
+    <text x="15" y="34" fill="var(--pink)" font-size="13" font-weight="600">q₁  q₂</text>
+    <rect x="90" y="10" width="80" height="36" rx="4" fill="var(--purple-bg)" stroke="var(--purple)" stroke-width="1.5"/>
+    <text x="105" y="34" fill="var(--purple)" font-size="13" font-weight="600">q₃  q₄</text>
+    <rect x="180" y="10" width="80" height="36" rx="4" fill="var(--teal-bg)" stroke="var(--teal)" stroke-width="1.5"/>
+    <text x="195" y="34" fill="var(--teal)" font-size="13" font-weight="600">q₅  q₆</text>
+    <rect x="270" y="10" width="80" height="36" rx="4" fill="var(--green-bg)" stroke="var(--green)" stroke-width="1.5"/>
+    <text x="285" y="34" fill="var(--green)" font-size="13" font-weight="600">q₇  q₈</text>
+  </g>
+
+  <!-- Arrows down -->
+  <g transform="translate(30, 110)">
+    <text x="25" y="0" fill="var(--pink)" font-size="20">&darr;</text>
+    <text x="115" y="0" fill="var(--purple)" font-size="20">&darr;</text>
+    <text x="205" y="0" fill="var(--teal)" font-size="20">&darr;</text>
+    <text x="295" y="0" fill="var(--green)" font-size="20">&darr;</text>
+  </g>
+
+  <!-- Rotation labels -->
+  <g transform="translate(30, 124)">
+    <text x="8" y="14" fill="var(--pink)" font-size="11" font-weight="600">R(m&theta;₁)</text>
+    <text x="98" y="14" fill="var(--purple)" font-size="11" font-weight="600">R(m&theta;₂)</text>
+    <text x="188" y="14" fill="var(--teal)" font-size="11" font-weight="600">R(m&theta;₃)</text>
+    <text x="278" y="14" fill="var(--green)" font-size="11" font-weight="600">R(m&theta;₄)</text>
+  </g>
+
+  <!-- Rotated vector boxes -->
+  <g transform="translate(30, 146)">
+    <text x="0" y="0" fill="var(--text-muted)" font-size="12">旋转后 q':</text>
+    <rect x="0" y="10" width="80" height="36" rx="4" fill="var(--pink-bg)" stroke="var(--pink)" stroke-width="2"/>
+    <text x="12" y="34" fill="var(--pink)" font-size="13" font-weight="600">q'₁ q'₂</text>
+    <rect x="90" y="10" width="80" height="36" rx="4" fill="var(--purple-bg)" stroke="var(--purple)" stroke-width="2"/>
+    <text x="102" y="34" fill="var(--purple)" font-size="13" font-weight="600">q'₃ q'₄</text>
+    <rect x="180" y="10" width="80" height="36" rx="4" fill="var(--teal-bg)" stroke="var(--teal)" stroke-width="2"/>
+    <text x="192" y="34" fill="var(--teal)" font-size="13" font-weight="600">q'₅ q'₆</text>
+    <rect x="270" y="10" width="80" height="36" rx="4" fill="var(--green-bg)" stroke="var(--green)" stroke-width="2"/>
+    <text x="282" y="34" fill="var(--green)" font-size="13" font-weight="600">q'₇ q'₈</text>
+  </g>
+
+  <!-- Right side: frequency explanation -->
+  <g transform="translate(420, 50)">
+    <rect x="0" y="0" width="310" height="200" rx="8" fill="var(--bg-alt)" stroke="var(--border)"/>
+    <text x="16" y="28" fill="var(--text)" font-size="14" font-weight="700">每组的旋转频率不同</text>
+
+    <circle cx="30" cy="56" r="6" fill="var(--pink)"/>
+    <text x="44" y="60" fill="var(--text-secondary)" font-size="13">&theta;₁ = 1/10000<tspan baseline-shift="super" font-size="9">0/d</tspan> = 1.0 (最高频)</text>
+
+    <circle cx="30" cy="86" r="6" fill="var(--purple)"/>
+    <text x="44" y="90" fill="var(--text-secondary)" font-size="13">&theta;₂ = 1/10000<tspan baseline-shift="super" font-size="9">2/d</tspan> = 0.1</text>
+
+    <circle cx="30" cy="116" r="6" fill="var(--teal)"/>
+    <text x="44" y="120" fill="var(--text-secondary)" font-size="13">&theta;₃ = 1/10000<tspan baseline-shift="super" font-size="9">4/d</tspan> = 0.01</text>
+
+    <circle cx="30" cy="146" r="6" fill="var(--green)"/>
+    <text x="44" y="150" fill="var(--text-secondary)" font-size="13">&theta;₄ = 1/10000<tspan baseline-shift="super" font-size="9">6/d</tspan> = 0.001 (最低频)</text>
+
+    <text x="16" y="182" fill="var(--text-muted)" font-size="12">低维度 → 高频旋转 → 编码细粒度位置</text>
+    <text x="16" y="197" fill="var(--text-muted)" font-size="12">高维度 → 低频旋转 → 编码粗粒度位置</text>
+  </g>
+</svg>
+</div>
+
+<p>完整的 <span class="math-inline">d</span> 维 RoPE 旋转矩阵是一个<strong>分块对角矩阵</strong>：</p>
+
+<div class="math-block">
+  <div class="equation">
+    R<sub>d</sub>(m) = diag( R(m&theta;₁), R(m&theta;₂), ..., R(m&theta;<sub>d/2</sub>) )
+  </div>
+  <span class="label">d/2 个独立的 2D 旋转，每个频率不同</span>
+</div>
+
+<p>其中频率按照几何级数递减：</p>
+<div class="math-block">
+  <div class="equation">
+    &theta;<sub>i</sub> = base<sup>&minus;2(i&minus;1)/d</sup>, &nbsp;&nbsp; i = 1, 2, ..., d/2, &nbsp;&nbsp; base = 10000
+  </div>
+  <span class="label">默认 base = 10000，产生从高频到低频的一系列旋转频率</span>
+</div>
+
+<div id="math-complex"></div>
+<h3>3.3 复数形式：更优雅的表达</h3>
+
+<p>将每对相邻元素 <span class="math-inline">(q₂ᵢ₋₁, q₂ᵢ)</span> 看作一个复数 <span class="math-inline">q₂ᵢ₋₁ + q₂ᵢ &middot; i</span>，则旋转就变成了<strong>复数乘法</strong>：</p>
+
+<div class="math-block">
+  <div class="equation">
+    q'<sub>i</sub> = q<sub>i</sub> &middot; e<sup>im&theta;<sub>i</sub></sup> = (q₂ᵢ₋₁ + q₂ᵢ &middot; <em>i</em>) &middot; (cos(m&theta;<sub>i</sub>) + sin(m&theta;<sub>i</sub>) &middot; <em>i</em>)
+  </div>
+  <span class="label">复数乘以单位圆上的点 = 旋转！这就是 RoPE 最简洁的形式</span>
+</div>
+
+<div class="info-box purple">
+  <div class="box-title">为什么复数形式在代码中更常用？</div>
+  <p>复数乘法只需要 <strong>2 次乘法 + 1 次加减</strong>，而矩阵乘法需要 4 次乘法 + 2 次加减。在实际实现中（如 LLaMA），通常将向量 reshape 为复数张量后直接做逐元素复数乘法，避免构造和存储巨大的旋转矩阵。</p>
+</div>
+
+<p>展开后的<strong>实数计算公式</strong>（代码中最终执行的操作）：</p>
+
+<div class="math-block">
+  <div class="equation" style="text-align:left;padding-left:40px;">
+    q'₂ᵢ₋₁ = q₂ᵢ₋₁ &middot; cos(m&theta;<sub>i</sub>) &minus; q₂ᵢ &middot; sin(m&theta;<sub>i</sub>)<br>
+    q'₂ᵢ&nbsp;&nbsp;&nbsp; = q₂ᵢ₋₁ &middot; sin(m&theta;<sub>i</sub>) + q₂ᵢ &middot; cos(m&theta;<sub>i</sub>)
+  </div>
+</div>
+
+<div id="math-qk"></div>
+<h3>3.4 Q·K 内积：相对位置的数学证明</h3>
+
+<p>现在来证明为什么 RoPE 能编码<strong>相对位置</strong>。设位置 <span class="math-inline">m</span> 的 Query 和位置 <span class="math-inline">n</span> 的 Key：</p>
+
+<div class="math-block">
+  <div class="equation" style="text-align:left;padding-left:40px;">
+    &langle; q'<sub>m</sub>, k'<sub>n</sub> &rangle;<br>
+    = &langle; R(m&theta;) q, R(n&theta;) k &rangle;<br>
+    = qᵀ R(m&theta;)ᵀ R(n&theta;) k<br>
+    = qᵀ R(&minus;m&theta;) R(n&theta;) k &nbsp;&nbsp;&nbsp; <span style="color:var(--text-muted);font-size:14px">(正交矩阵性质)</span><br>
+    = qᵀ R((n &minus; m)&theta;) k &nbsp;&nbsp;&nbsp; <span style="color:var(--text-muted);font-size:14px">(旋转可加性)</span><br>
+    = <strong style="color:var(--green)">g(q, k, n &minus; m)</strong> &nbsp;&nbsp;&nbsp; <span style="color:var(--green);font-size:14px">只依赖相对距离！</span>
+  </div>
+</div>
+
+<div class="info-box green">
+  <div class="box-title">关键结论</div>
+  <p>经过 RoPE 旋转后，Q 和 K 的内积（即注意力分数）<strong>只是相对距离 (n&minus;m) 的函数</strong>。无论 token 在序列中的绝对位置如何，只要两个 token 之间的距离相同，它们的注意力分数就相同。</p>
+</div>
+</section>
+
+<!-- ==================== 4. 频率设计 ==================== -->
+<section id="frequency">
+<h2>4. 频率设计与长度外推</h2>
+
+<div id="freq-base"></div>
+<h3>4.1 频率基底 &theta; 的设计</h3>
+
+<p>RoPE 的频率公式 <span class="math-inline">&theta;ᵢ = base⁻²⁽ⁱ⁻¹⁾/ᵈ</span> 的设计灵感来自<strong>原始 Transformer 的正弦位置编码</strong>，但有本质区别：</p>
+
+<div class="comparison">
+  <div>
+    <h4>正弦位置编码 (Sinusoidal)</h4>
+    <p style="font-size:13px">将 sin/cos 值<strong>加到</strong> token 嵌入上</p>
+    <p style="font-size:13px;color:var(--red)">加法破坏了向量的内积结构</p>
+    <p style="font-size:13px;color:var(--red)">位置信息和语义信息混合</p>
+  </div>
+  <div>
+    <h4>RoPE</h4>
+    <p style="font-size:13px">用 sin/cos 构造旋转矩阵，<strong>乘以</strong> Q/K</p>
+    <p style="font-size:13px;color:var(--green)">旋转保持内积的"相对位置"特性</p>
+    <p style="font-size:13px;color:var(--green)">位置信息融入注意力计算本身</p>
+  </div>
+</div>
+
+<p>不同维度对 (pair) 的频率形成一个<strong>从高频到低频的频谱</strong>：</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="freqGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="var(--pink)"/>
+      <stop offset="100%" stop-color="var(--teal)"/>
+    </linearGradient>
+  </defs>
+  <text x="40" y="28" fill="var(--text)" font-size="14" font-weight="700">频率分布 (d=128, base=10000)</text>
+
+  <!-- Axes -->
+  <line x1="70" y1="250" x2="660" y2="250" stroke="var(--border)" stroke-width="1"/>
+  <line x1="70" y1="250" x2="70" y2="50" stroke="var(--border)" stroke-width="1"/>
+  <text x="340" y="285" fill="var(--text-muted)" font-size="12" text-anchor="middle">维度对索引 i (0 ~ d/2-1)</text>
+  <text x="25" y="150" fill="var(--text-muted)" font-size="12" transform="rotate(-90, 25, 150)">频率 &theta;ᵢ</text>
+
+  <!-- Frequency bars (exponential decay) -->
+  <g>
+    <!-- i=0: theta=1.0, height=190 -->
+    <rect x="80" y="60" width="8" height="190" rx="2" fill="var(--pink)" opacity="0.9"/>
+    <!-- i=4: theta~0.4 -->
+    <rect x="115" y="135" width="8" height="115" rx="2" fill="#d1487a" opacity="0.85"/>
+    <!-- i=8: theta~0.18 -->
+    <rect x="150" y="175" width="8" height="75" rx="2" fill="#b54f80" opacity="0.8"/>
+    <!-- i=12: theta~0.08 -->
+    <rect x="185" y="205" width="8" height="45" rx="2" fill="#995688" opacity="0.75"/>
+    <!-- i=16: theta~0.03 -->
+    <rect x="220" y="222" width="8" height="28" rx="2" fill="#7d5d90" opacity="0.7"/>
+    <!-- i=20 -->
+    <rect x="255" y="232" width="8" height="18" rx="2" fill="#616498" opacity="0.65"/>
+    <!-- i=24 -->
+    <rect x="290" y="238" width="8" height="12" rx="2" fill="#456b9f" opacity="0.6"/>
+    <!-- i=28 -->
+    <rect x="325" y="242" width="8" height="8" rx="2" fill="#3072a5" opacity="0.55"/>
+    <!-- i=32 to 60: very small -->
+    <rect x="360" y="244" width="8" height="6" rx="2" fill="#2079ab" opacity="0.5"/>
+    <rect x="395" y="246" width="8" height="4" rx="2" fill="#1580b1" opacity="0.45"/>
+    <rect x="430" y="247" width="8" height="3" rx="2" fill="#0c85a0" opacity="0.4"/>
+    <rect x="465" y="247" width="8" height="3" rx="2" fill="#0c8599" opacity="0.35"/>
+    <rect x="500" y="248" width="8" height="2" rx="2" fill="var(--teal)" opacity="0.3"/>
+    <rect x="535" y="248" width="8" height="2" rx="2" fill="var(--teal)" opacity="0.25"/>
+    <rect x="570" y="249" width="8" height="1" rx="2" fill="var(--teal)" opacity="0.2"/>
+    <rect x="605" y="249" width="8" height="1" rx="2" fill="var(--teal)" opacity="0.15"/>
+    <rect x="640" y="249" width="8" height="1" rx="2" fill="var(--teal)" opacity="0.1"/>
+  </g>
+
+  <!-- Labels -->
+  <text x="80" y="265" fill="var(--pink)" font-size="10">0</text>
+  <text x="640" y="265" fill="var(--teal)" font-size="10">63</text>
+
+  <!-- Annotations -->
+  <rect x="80" y="48" width="4" height="4" fill="var(--pink)"/>
+  <text x="90" y="55" fill="var(--pink)" font-size="11">高频: 变化快, 编码近距离</text>
+  <rect x="500" y="48" width="4" height="4" fill="var(--teal)"/>
+  <text x="510" y="55" fill="var(--teal)" font-size="11">低频: 变化慢, 编码远距离</text>
+</svg>
+</div>
+
+<div class="info-box orange">
+  <div class="box-title">频率的直觉：多尺度位置编码</div>
+  <p>类比十进制数字：个位数变化最快（高频），十位次之，百位更慢（低频）。RoPE 中前几个维度对像"秒针"（快速旋转，分辨近距离），后面的维度对像"时针"（缓慢旋转，分辨远距离）。这种<strong>多尺度编码</strong>使得 RoPE 既能区分相邻 token，也能感知远距离依赖。</p>
+</div>
+
+<div id="freq-extrapolation"></div>
+<h3>4.2 长度外推：超越训练长度</h3>
+
+<p>RoPE 的一大优势是支持<strong>长度外推</strong>——模型能泛化到比训练时更长的序列。方法是调整 base 参数：</p>
+
+<table>
+  <thead>
+    <tr><th>方法</th><th>策略</th><th>base 值</th><th>效果</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>原始 RoPE</td><td>—</td><td>10,000</td><td>训练长度内表现好</td></tr>
+    <tr><td>Code LLaMA</td><td>增大 base</td><td>1,000,000</td><td>16K → 100K</td></tr>
+    <tr><td>DeepSeek-V4</td><td>增大 base</td><td>10,000,000</td><td>256K</td></tr>
+    <tr><td>YaRN</td><td>分段缩放</td><td>动态</td><td>高倍外推</td></tr>
+    <tr><td>NTK-aware</td><td>动态 base</td><td>按长度调整</td><td>无需微调外推</td></tr>
+  </tbody>
+</table>
+
+<p><strong>增大 base 的直觉</strong>：base 越大，所有频率越低，旋转越慢。这意味着在更长的序列上，旋转角度的变化更加平缓，避免了高频维度"绕圈太多"导致的周期性混淆。</p>
+
+<div class="math-block">
+  <div class="equation">
+    base &uarr; &nbsp;&rArr;&nbsp; &theta;<sub>i</sub> &darr; &nbsp;&rArr;&nbsp; 每个位置的旋转角度更小 &nbsp;&rArr;&nbsp; 可表示更长序列
+  </div>
+</div>
+</section>
+
+<!-- ==================== 5. 关键优势 ==================== -->
+<section id="advantages">
+<h2>5. RoPE 的关键优势</h2>
+
+<div class="metrics-grid" style="grid-template-columns:repeat(auto-fit, minmax(200px,1fr))">
+  <div class="metric-card pink" style="text-align:left;padding:20px">
+    <div class="metric-value" style="font-size:18px">相对位置编码</div>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin-top:8px">注意力分数仅依赖 token 间相对距离，天然适合语言建模中的平移不变性需求</p>
+  </div>
+  <div class="metric-card purple" style="text-align:left;padding:20px">
+    <div class="metric-value" style="font-size:18px">保范性</div>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin-top:8px">旋转不改变向量长度，不会引入额外的 scale 偏差，训练更稳定</p>
+  </div>
+  <div class="metric-card teal" style="text-align:left;padding:20px">
+    <div class="metric-value" style="font-size:18px">远距离衰减</div>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin-top:8px">相对距离越大，高频分量旋转越多，内积自然衰减，模拟局部性偏好</p>
+  </div>
+  <div class="metric-card green" style="text-align:left;padding:20px">
+    <div class="metric-value" style="font-size:18px">可扩展性</div>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin-top:8px">通过调整 base 或分段缩放，灵活外推到任意长度，无需修改模型结构</p>
+  </div>
+</div>
+
+<details>
+  <summary>远距离衰减的直觉解释</summary>
+  <div class="detail-content">
+    <p>当两个 token 距离较远时，每个维度对的旋转角度差 <span class="math-inline">(m-n)&theta;ᵢ</span> 都很大。高频维度的 cos 值会剧烈振荡、正负抵消，使得这些维度对内积的贡献趋近于零。只有最低频的几个维度还能保持一致的方向。</p>
+    <p>这产生了一种<strong>天然的局部性偏好</strong>：近距离 token 对的内积更大（更多维度"对齐"），远距离 token 对的内积更小。这与语言中"近处的词通常更相关"的先验一致。</p>
+  </div>
+</details>
+</section>
+
+<!-- ==================== 6. 代码实现 ==================== -->
+<section id="code">
+<h2>6. 代码实现</h2>
+
+<p>以下是 RoPE 的 PyTorch 实现，基于 LLaMA 的风格，逐步分解。</p>
+
+<div id="code-precompute"></div>
+<h3>6.1 预计算频率表 (freqs_cis)</h3>
+
+<pre>
+<span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">precompute_freqs_cis</span>(dim: <span class="fn">int</span>, seq_len: <span class="fn">int</span>, base: <span class="fn">float</span> = <span class="num">10000.0</span>):
+    <span class="comment"># 计算每个维度对的频率: theta_i = 1 / base^(2i/d)</span>
+    freqs = <span class="num">1.0</span> / (base ** (torch.arange(<span class="num">0</span>, dim, <span class="num">2</span>).float() / dim))
+        <span class="comment"># <span class="shape">[d/2]</span> — 从高频到低频的频率序列</span>
+
+    <span class="comment"># 位置序列: [0, 1, 2, ..., seq_len-1]</span>
+    t = torch.arange(seq_len).float()
+        <span class="comment"># <span class="shape">[seq_len]</span></span>
+
+    <span class="comment"># 外积: 每个位置 × 每个频率 = 旋转角度矩阵</span>
+    angles = torch.outer(t, freqs)
+        <span class="comment"># <span class="shape">[seq_len, d/2]</span> — angles[m][i] = m * theta_i</span>
+
+    <span class="comment"># 转为复数形式: e^(i*angle) = cos(angle) + i*sin(angle)</span>
+    freqs_cis = torch.polar(torch.ones_like(angles), angles)
+        <span class="comment"># <span class="shape">[seq_len, d/2]</span> — 复数张量，每个元素在单位圆上</span>
+
+    <span class="kw">return</span> freqs_cis
+</pre>
+
+<table class="shape-flow">
+  <thead><tr><th>步骤</th><th>操作</th><th>输出 Shape</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="op">arange(0, d, 2) / d</td><td class="tensor-shape">[d/2]</td><td>归一化维度索引</td></tr>
+    <tr><td>2</td><td class="op">base ** (-indices)</td><td class="tensor-shape">[d/2]</td><td>频率 &theta;ᵢ = base⁻²ⁱ/ᵈ</td></tr>
+    <tr><td>3</td><td class="op">outer(positions, freqs)</td><td class="tensor-shape">[seq_len, d/2]</td><td>旋转角度矩阵</td></tr>
+    <tr><td>4</td><td class="op">polar(1, angles)</td><td class="tensor-shape">[seq_len, d/2]</td><td>复数旋转因子 e<sup>imθᵢ</sup></td></tr>
+  </tbody>
+</table>
+
+<div id="code-apply"></div>
+<h3>6.2 应用旋转到 Q/K</h3>
+
+<pre>
+<span class="kw">def</span> <span class="fn">apply_rotary_emb</span>(
+    q: torch.Tensor,     <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
+    k: torch.Tensor,     <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim]</span></span>
+    freqs_cis: torch.Tensor  <span class="comment"># <span class="shape">[seq_len, head_dim/2]</span></span>
+):
+    <span class="comment"># 将实数张量视为复数: 相邻两个元素组成一个复数</span>
+    q_complex = torch.view_as_complex(q.float().reshape(*q.shape[:-<span class="num">1</span>], -<span class="num">1</span>, <span class="num">2</span>))
+        <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim/2]</span> complex64</span>
+    k_complex = torch.view_as_complex(k.float().reshape(*k.shape[:-<span class="num">1</span>], -<span class="num">1</span>, <span class="num">2</span>))
+        <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim/2]</span> complex64</span>
+
+    <span class="comment"># 广播 freqs_cis 到 [1, seq_len, 1, head_dim/2]</span>
+    freqs = freqs_cis.unsqueeze(<span class="num">0</span>).unsqueeze(<span class="num">2</span>)
+
+    <span class="comment"># 核心操作：复数逐元素乘法 = 旋转！</span>
+    q_rotated = q_complex * freqs    <span class="comment"># <span class="shape">[b, s, nh, hd/2]</span> 复数乘法</span>
+    k_rotated = k_complex * freqs    <span class="comment"># <span class="shape">[b, s, nkv, hd/2]</span></span>
+
+    <span class="comment"># 转回实数张量</span>
+    q_out = torch.view_as_real(q_rotated).flatten(-<span class="num">2</span>)
+        <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
+    k_out = torch.view_as_real(k_rotated).flatten(-<span class="num">2</span>)
+        <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim]</span></span>
+
+    <span class="kw">return</span> q_out.type_as(q), k_out.type_as(k)
+</pre>
+
+<div class="info-box">
+  <div class="box-title">核心操作只有一行</div>
+  <p><code>q_rotated = q_complex * freqs</code> — 复数乘法自动完成了旋转！</p>
+  <p>这等价于：对每对 (q₂ᵢ₋₁, q₂ᵢ)，执行 2&times;2 旋转矩阵乘法。但复数乘法更快、更简洁。</p>
+</div>
+
+<div id="code-full"></div>
+
+<details>
+  <summary>6.3 不使用复数的实数版本 (展开形式)</summary>
+  <div class="detail-content">
+    <p>有些框架不支持复数运算，可以用纯实数实现：</p>
+<pre>
+<span class="kw">def</span> <span class="fn">apply_rotary_emb_real</span>(x, freqs_cos, freqs_sin):
+    <span class="comment"># x: <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
+    <span class="comment"># 将 head_dim 拆分为两半</span>
+    x1 = x[..., : x.shape[-<span class="num">1</span>] // <span class="num">2</span>]   <span class="comment"># 偶数维度</span>
+    x2 = x[..., x.shape[-<span class="num">1</span>] // <span class="num">2</span> :]   <span class="comment"># 奇数维度</span>
+
+    <span class="comment"># 旋转公式: [cos, -sin; sin, cos] * [x1, x2]</span>
+    out1 = x1 * freqs_cos - x2 * freqs_sin
+    out2 = x1 * freqs_sin + x2 * freqs_cos
+
+    <span class="kw">return</span> torch.cat([out1, out2], dim=-<span class="num">1</span>)
+</pre>
+    <p>注意：这里将向量的<strong>前半和后半</strong>分别当作 "实部" 和 "虚部"，与将<strong>相邻元素</strong>配对的方式等价（只要保持一致即可）。</p>
+  </div>
+</details>
+</section>
+
+<!-- ==================== 7. 交互: 旋转可视化 ==================== -->
+<section id="demo-rotation">
+<h2>7. 交互式 Demo：2D 旋转可视化</h2>
+
+<p>拖动滑块改变位置 <span class="math-inline">m</span>，观察向量如何随位置旋转。红色是 Query，蓝色是 Key。</p>
+
+<div class="demo-panel">
+  <h4>2D 旋转演示</h4>
+  <div class="slider-row">
+    <label>Query 位置 m:</label>
+    <input type="range" id="posM" min="0" max="50" value="5">
+    <span class="val" id="posMVal">5</span>
+  </div>
+  <div class="slider-row">
+    <label>Key 位置 n:</label>
+    <input type="range" id="posN" min="0" max="50" value="2">
+    <span class="val" id="posNVal">2</span>
+  </div>
+  <div class="slider-row">
+    <label>频率 &theta;:</label>
+    <input type="range" id="theta" min="1" max="100" value="15">
+    <span class="val" id="thetaVal">0.15</span>
+  </div>
+  <canvas id="rotationCanvas" width="500" height="500" style="max-width:100%"></canvas>
+  <p style="font-size:12px;color:var(--text-muted);text-align:center;margin-top:8px">
+    <span style="color:var(--pink)">&#9679;</span> Query (位置 m) &nbsp;&nbsp;
+    <span style="color:var(--accent)">&#9679;</span> Key (位置 n) &nbsp;&nbsp;
+    <span style="color:var(--text-muted)">&#9679;</span> 原始向量 &nbsp;&nbsp;
+    <span style="color:var(--orange)">&#9679;</span> 角度差 = (m-n)&theta;
+  </p>
+  <div id="rotationInfo" style="text-align:center;font-size:13px;margin-top:8px;color:var(--text-secondary)"></div>
+</div>
+</section>
+
+<!-- ==================== 8. 交互: 频率探索器 ==================== -->
+<section id="demo-frequency">
+<h2>8. 交互式 Demo：频率探索器</h2>
+
+<p>调整 <code>base</code> 和 <code>dim</code> 参数，观察频率分布如何变化。</p>
+
+<div class="demo-panel">
+  <h4>RoPE 频率分布</h4>
+  <div class="slider-row">
+    <label>base:</label>
+    <input type="range" id="freqBase" min="100" max="10000000" value="10000" step="100">
+    <span class="val" id="freqBaseVal">10,000</span>
+  </div>
+  <div class="slider-row">
+    <label>dim (head_dim):</label>
+    <input type="range" id="freqDim" min="16" max="256" value="128" step="16">
+    <span class="val" id="freqDimVal">128</span>
+  </div>
+  <canvas id="freqCanvas" width="700" height="350" style="max-width:100%"></canvas>
+  <div class="slider-row" style="justify-content:center">
+    <div class="btn-group">
+      <button class="btn" onclick="setFreqPreset(10000, 128)">LLaMA (10K)</button>
+      <button class="btn" onclick="setFreqPreset(1000000, 128)">Code LLaMA (1M)</button>
+      <button class="btn" onclick="setFreqPreset(10000000, 128)">DeepSeek-V4 (10M)</button>
+      <button class="btn" onclick="setFreqPreset(500000, 192)">Qwen2.5 (500K, d=192)</button>
+    </div>
+  </div>
+  <div id="freqInfo" style="text-align:center;font-size:13px;margin-top:8px;color:var(--text-secondary)"></div>
+</div>
+</section>
+
+<!-- ==================== 9. 交互: 内积衰减 ==================== -->
+<section id="demo-dotproduct">
+<h2>9. 交互式 Demo：内积衰减曲线</h2>
+
+<p>观察随机 Query 和 Key 经过 RoPE 旋转后，内积如何随相对距离衰减。</p>
+
+<div class="demo-panel">
+  <h4>Q·K 内积 vs 相对距离</h4>
+  <div class="slider-row">
+    <label>head_dim:</label>
+    <input type="range" id="dpDim" min="16" max="256" value="64" step="16">
+    <span class="val" id="dpDimVal">64</span>
+  </div>
+  <div class="slider-row">
+    <label>base:</label>
+    <input type="range" id="dpBase" min="100" max="1000000" value="10000" step="100">
+    <span class="val" id="dpBaseVal">10,000</span>
+  </div>
+  <div class="slider-row">
+    <label>最大距离:</label>
+    <input type="range" id="dpMaxDist" min="50" max="2000" value="200" step="50">
+    <span class="val" id="dpMaxDistVal">200</span>
+  </div>
+  <div class="btn-group" style="justify-content:center">
+    <button class="btn" id="dpRegenBtn" onclick="regenDotProduct()">重新生成随机 Q/K</button>
+  </div>
+  <canvas id="dpCanvas" width="700" height="350" style="max-width:100%"></canvas>
+  <p style="font-size:12px;color:var(--text-muted);text-align:center">横轴: 相对距离 |m-n|, 纵轴: 归一化内积 (每个距离取多次平均)</p>
+</div>
+</section>
+
+<!-- ==================== 10. 变体 ==================== -->
+<section id="variants">
+<h2>10. RoPE 变体与扩展</h2>
+
+<table>
+  <thead>
+    <tr><th>变体</th><th>核心改动</th><th>目标</th><th>代表模型</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>NTK-aware RoPE</strong></td>
+      <td>base 按序列长度比例缩放</td>
+      <td>免微调外推</td>
+      <td>社区实验</td>
+    </tr>
+    <tr>
+      <td><strong>YaRN</strong></td>
+      <td>按频率分三段，分别：不动 / 线性插值 / NTK</td>
+      <td>高倍外推 + 保持近距离精度</td>
+      <td>Mistral, DeepSeek</td>
+    </tr>
+    <tr>
+      <td><strong>Dynamic NTK</strong></td>
+      <td>推理时根据当前序列长度动态调整 base</td>
+      <td>适应可变长度</td>
+      <td>Qwen</td>
+    </tr>
+    <tr>
+      <td><strong>部分 RoPE (Partial)</strong></td>
+      <td>只对 head_dim 的一部分应用 RoPE</td>
+      <td>保留一些非位置信息维度</td>
+      <td>GPT-NeoX, PaLM</td>
+    </tr>
+    <tr>
+      <td><strong>2D/3D RoPE</strong></td>
+      <td>分维度编码不同空间轴的位置</td>
+      <td>图像 / 视频 ViT</td>
+      <td>各种 ViT 变体</td>
+    </tr>
+  </tbody>
+</table>
+
+<details>
+  <summary>YaRN 的分段策略细节</summary>
+  <div class="detail-content">
+    <p>YaRN 将频率维度分为三段：</p>
+    <ul>
+      <li><strong>低频段</strong>（波长 > 原始训练长度）：直接缩放（NTK 方式）</li>
+      <li><strong>中频段</strong>：NTK 和线性插值的混合</li>
+      <li><strong>高频段</strong>（波长 &lt;&lt; 训练长度）：保持不变</li>
+    </ul>
+    <p>这样做的理由是：高频维度编码的是<strong>近距离</strong>关系，训练时已经见过足够多的模式，不需要调整；而低频维度编码<strong>远距离</strong>关系，是外推时需要重点调整的部分。</p>
+  </div>
+</details>
+</section>
+
+<!-- ==================== 11. 总结 ==================== -->
+<section id="summary">
+<h2>11. 总结</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowB" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><path d="M0,0 L10,3.5 L0,7" fill="var(--svg-arrow)"/></marker>
+  </defs>
+  <text x="380" y="30" fill="var(--text)" font-size="16" font-weight="700" text-anchor="middle">RoPE 工作流总览</text>
+
+  <!-- Step 1: Precompute -->
+  <rect x="20" y="55" width="180" height="70" rx="8" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="2"/>
+  <text x="110" y="82" fill="var(--text)" font-size="13" font-weight="600" text-anchor="middle">1. 预计算频率</text>
+  <text x="110" y="102" fill="var(--text-muted)" font-size="11" text-anchor="middle">&theta;ᵢ = base⁻²ⁱ/ᵈ</text>
+  <text x="110" y="117" fill="var(--shape-color)" font-size="10" text-anchor="middle">[seq_len, d/2] complex</text>
+
+  <line x1="200" y1="90" x2="240" y2="90" stroke="var(--svg-arrow)" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+  <!-- Step 2: Linear projection -->
+  <rect x="240" y="55" width="160" height="70" rx="8" fill="var(--svg-node-fill)" stroke="var(--svg-node-stroke)" stroke-width="2"/>
+  <text x="320" y="82" fill="var(--text)" font-size="13" font-weight="600" text-anchor="middle">2. 线性投影</text>
+  <text x="320" y="102" fill="var(--text-muted)" font-size="11" text-anchor="middle">Q = X·W_q, K = X·W_k</text>
+  <text x="320" y="117" fill="var(--shape-color)" font-size="10" text-anchor="middle">[b, s, n_h, d_h]</text>
+
+  <line x1="400" y1="90" x2="440" y2="90" stroke="var(--svg-arrow)" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+  <!-- Step 3: Apply RoPE -->
+  <rect x="440" y="50" width="160" height="80" rx="8" fill="var(--svg-rotate-fill)" stroke="var(--svg-rotate-stroke)" stroke-width="2.5"/>
+  <text x="520" y="78" fill="var(--text)" font-size="13" font-weight="700" text-anchor="middle">3. 应用 RoPE</text>
+  <text x="520" y="98" fill="var(--text-muted)" font-size="11" text-anchor="middle">Q' = Q ⊙ e^{im&theta;}</text>
+  <text x="520" y="113" fill="var(--text-muted)" font-size="11" text-anchor="middle">K' = K ⊙ e^{in&theta;}</text>
+  <text x="520" y="126" fill="var(--shape-color)" font-size="10" text-anchor="middle">复数逐元素乘法</text>
+
+  <line x1="600" y1="90" x2="640" y2="90" stroke="var(--svg-arrow)" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+  <!-- Step 4: Attention -->
+  <rect x="640" y="55" width="100" height="70" rx="8" fill="var(--svg-freq-fill)" stroke="var(--svg-freq-stroke)" stroke-width="2"/>
+  <text x="690" y="82" fill="var(--text)" font-size="13" font-weight="600" text-anchor="middle">4. Attention</text>
+  <text x="690" y="102" fill="var(--text-muted)" font-size="11" text-anchor="middle">Q'·K'ᵀ</text>
+
+  <!-- Bottom: Key properties -->
+  <rect x="60" y="175" width="200" height="90" rx="8" fill="var(--pink-bg)" stroke="var(--pink)" stroke-width="1.5"/>
+  <text x="160" y="200" fill="var(--pink)" font-size="13" font-weight="700" text-anchor="middle">相对位置编码</text>
+  <text x="160" y="222" fill="var(--text-secondary)" font-size="11" text-anchor="middle">&langle;Q'_m, K'_n&rangle; = g(q, k, m-n)</text>
+  <text x="160" y="242" fill="var(--text-muted)" font-size="11" text-anchor="middle">内积只依赖相对距离</text>
+
+  <rect x="290" y="175" width="200" height="90" rx="8" fill="var(--purple-bg)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text x="390" y="200" fill="var(--purple)" font-size="13" font-weight="700" text-anchor="middle">多尺度频率</text>
+  <text x="390" y="222" fill="var(--text-secondary)" font-size="11" text-anchor="middle">高频 → 近距离精细分辨</text>
+  <text x="390" y="242" fill="var(--text-muted)" font-size="11" text-anchor="middle">低频 → 远距离粗粒度感知</text>
+
+  <rect x="520" y="175" width="200" height="90" rx="8" fill="var(--green-bg)" stroke="var(--green)" stroke-width="1.5"/>
+  <text x="620" y="200" fill="var(--green)" font-size="13" font-weight="700" text-anchor="middle">长度外推</text>
+  <text x="620" y="222" fill="var(--text-secondary)" font-size="11" text-anchor="middle">调整 base 即可扩展</text>
+  <text x="620" y="242" fill="var(--text-muted)" font-size="11" text-anchor="middle">NTK / YaRN / Dynamic</text>
+
+  <!-- Connections from step 3 down -->
+  <line x1="160" y1="145" x2="160" y2="175" stroke="var(--pink)" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="390" y1="145" x2="390" y2="175" stroke="var(--purple)" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="620" y1="145" x2="620" y2="175" stroke="var(--green)" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Bottom summary -->
+  <rect x="120" y="300" width="520" height="80" rx="10" fill="var(--bg-alt)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="380" y="328" fill="var(--text)" font-size="14" font-weight="700" text-anchor="middle">RoPE = 用旋转编码位置 + 用内积提取相对关系</text>
+  <text x="380" y="352" fill="var(--text-secondary)" font-size="12" text-anchor="middle">数学上优雅（正交变换），实现上高效（复数乘法），</text>
+  <text x="380" y="370" fill="var(--text-secondary)" font-size="12" text-anchor="middle">效果上强大（天然局部性 + 灵活外推） — 现代 LLM 的标准选择</text>
+</svg>
+</div>
+
+<div class="info-box green">
+  <div class="box-title">一句话总结</div>
+  <p>RoPE 把<strong>位置编码</strong>从 "给 token 贴标签"（绝对编码）变成了 "让 token 转起来"（旋转编码）。每个 token 被旋转的角度取决于它的位置，而两个 token 注意力分数只取决于它们旋转角度的<strong>差</strong>——也就是相对距离。这个简单而优雅的想法，让模型既能精确感知 token 顺序，又能灵活适应不同长度的序列。</p>
+</div>
+</section>
+
+</main>
+
+<!-- ==================== JavaScript ==================== -->
+<script>
+// ========== Theme ==========
+function toggleTheme() {
+  const html = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  if (html.getAttribute('data-theme') === 'light') {
+    html.setAttribute('data-theme', 'dark');
+    btn.textContent = 'Light';
+  } else {
+    html.setAttribute('data-theme', 'light');
+    btn.textContent = 'Dark';
+  }
+  localStorage.setItem('theme', html.getAttribute('data-theme'));
+  drawRotation();
+  drawFrequency();
+  drawDotProduct();
+}
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('themeToggle').textContent = 'Light';
+  }
+})();
+
+// ========== Sidebar Navigation ==========
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.sidebar a');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const id = entry.target.id;
+      const link = document.querySelector(`.sidebar a[href="#${id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-80px 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+
+// ========== Search ==========
+const searchData = [
+  { id:'overview', title:'总览', keywords:'rope 旋转位置编码 概述 overview' },
+  { id:'why-position', title:'为什么需要位置编码', keywords:'位置编码 position encoding transformer 顺序 排列' },
+  { id:'intuition', title:'直觉理解', keywords:'旋转 直觉 时钟 音乐 移调' },
+  { id:'math', title:'数学原理', keywords:'数学 旋转矩阵 复数 内积 证明 推导' },
+  { id:'math-2d', title:'2D 旋转矩阵', keywords:'二维 旋转矩阵 cos sin 保范' },
+  { id:'math-nd', title:'高维推广', keywords:'高维 分组 频率 多尺度' },
+  { id:'math-complex', title:'复数形式', keywords:'复数 欧拉 乘法 优雅' },
+  { id:'math-qk', title:'Q·K 内积推导', keywords:'内积 注意力 相对位置 证明' },
+  { id:'frequency', title:'频率设计', keywords:'频率 base theta 10000 外推' },
+  { id:'freq-extrapolation', title:'长度外推', keywords:'外推 extrapolation NTK YaRN base 缩放' },
+  { id:'advantages', title:'关键优势', keywords:'优势 相对 保范 衰减 可扩展' },
+  { id:'code', title:'代码实现', keywords:'代码 pytorch 实现 precompute apply' },
+  { id:'code-precompute', title:'频率预计算', keywords:'预计算 freqs_cis outer polar' },
+  { id:'code-apply', title:'应用旋转', keywords:'apply rotary view_as_complex' },
+  { id:'demo-rotation', title:'旋转可视化 Demo', keywords:'demo 交互 可视化 旋转 canvas' },
+  { id:'demo-frequency', title:'频率探索器 Demo', keywords:'demo 交互 频率 探索 canvas base' },
+  { id:'demo-dotproduct', title:'内积衰减 Demo', keywords:'demo 交互 内积 衰减 距离' },
+  { id:'variants', title:'RoPE 变体', keywords:'变体 NTK YaRN dynamic partial 2d 3d' },
+  { id:'summary', title:'总结', keywords:'总结 summary 一句话' },
+];
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+searchInput.addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { searchResults.classList.remove('show'); return; }
+  const matches = searchData.filter(d => d.title.toLowerCase().includes(q) || d.keywords.includes(q));
+  if (matches.length === 0) { searchResults.classList.remove('show'); return; }
+  searchResults.innerHTML = matches.map(m => `<a href="#${m.id}" onclick="searchResults.classList.remove('show')">${m.title}</a>`).join('');
+  searchResults.classList.add('show');
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search-box') && !e.target.closest('.search-results')) searchResults.classList.remove('show'); });
+
+// ========== Canvas Helpers ==========
+function getCSS(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+function canvasDPR(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+// ========== Demo 1: Rotation Visualization ==========
+const posMSlider = document.getElementById('posM');
+const posNSlider = document.getElementById('posN');
+const thetaSlider = document.getElementById('theta');
+function drawRotation() {
+  const canvas = document.getElementById('rotationCanvas');
+  const { ctx, w, h } = canvasDPR(canvas);
+  const m = parseInt(posMSlider.value);
+  const n = parseInt(posNSlider.value);
+  const theta = parseInt(thetaSlider.value) / 100;
+  document.getElementById('posMVal').textContent = m;
+  document.getElementById('posNVal').textContent = n;
+  document.getElementById('thetaVal').textContent = theta.toFixed(2);
+
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.38;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = getCSS('--border');
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Axes
+  ctx.beginPath();
+  ctx.moveTo(cx - R - 20, cy); ctx.lineTo(cx + R + 20, cy);
+  ctx.moveTo(cx, cy + R + 20); ctx.lineTo(cx, cy - R - 20);
+  ctx.strokeStyle = getCSS('--border');
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Original vector (unit vector at 30 degrees)
+  const origAngle = Math.PI / 6;
+  const ox = Math.cos(origAngle) * R * 0.85;
+  const oy = -Math.sin(origAngle) * R * 0.85;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + ox, cy + oy);
+  ctx.strokeStyle = getCSS('--text-muted');
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '12px sans-serif';
+  ctx.fillText('original q', cx + ox + 5, cy + oy - 5);
+
+  // Query vector (rotated by m*theta)
+  const qAngle = origAngle + m * theta;
+  const qx = Math.cos(qAngle) * R * 0.85;
+  const qy = -Math.sin(qAngle) * R * 0.85;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + qx, cy + qy);
+  ctx.strokeStyle = getCSS('--shape-color');
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // Arrow head
+  drawArrowHead(ctx, cx, cy, cx + qx, cy + qy, getCSS('--shape-color'));
+  ctx.fillStyle = getCSS('--shape-color');
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`Q (pos=${m})`, cx + qx + 8, cy + qy);
+
+  // Key vector (rotated by n*theta)
+  const kAngle = origAngle + n * theta;
+  const kx = Math.cos(kAngle) * R * 0.85;
+  const ky = -Math.sin(kAngle) * R * 0.85;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + kx, cy + ky);
+  ctx.strokeStyle = getCSS('--accent');
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  drawArrowHead(ctx, cx, cy, cx + kx, cy + ky, getCSS('--accent'));
+  ctx.fillStyle = getCSS('--accent');
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`K (pos=${n})`, cx + kx + 8, cy + ky);
+
+  // Angle arc between Q and K
+  const startAngle = -Math.min(qAngle, kAngle);
+  const endAngle = -Math.max(qAngle, kAngle);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.4, startAngle, endAngle, true);
+  ctx.strokeStyle = getCSS('--orange');
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Label the angle
+  const midAngle = (qAngle + kAngle) / 2;
+  const labelR = R * 0.32;
+  ctx.fillStyle = getCSS('--orange');
+  ctx.font = 'bold 13px sans-serif';
+  const diff = Math.abs(m - n);
+  ctx.fillText(`${diff}θ = ${(diff * theta).toFixed(2)} rad`, cx + Math.cos(midAngle) * labelR - 25, cy - Math.sin(midAngle) * labelR);
+
+  // Info
+  const dotProduct = Math.cos((m - n) * theta);
+  document.getElementById('rotationInfo').innerHTML =
+    `Q·K 内积 (归一化) = cos(${diff}×${theta.toFixed(2)}) = <strong style="color:var(--accent)">${dotProduct.toFixed(4)}</strong> | 相对距离 = ${m - n}`;
+}
+
+function drawArrowHead(ctx, fromX, fromY, toX, toY, color) {
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const size = 10;
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - size * Math.cos(angle - 0.4), toY - size * Math.sin(angle - 0.4));
+  ctx.lineTo(toX - size * Math.cos(angle + 0.4), toY - size * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+posMSlider.addEventListener('input', drawRotation);
+posNSlider.addEventListener('input', drawRotation);
+thetaSlider.addEventListener('input', drawRotation);
+
+// ========== Demo 2: Frequency Explorer ==========
+const freqBaseSlider = document.getElementById('freqBase');
+const freqDimSlider = document.getElementById('freqDim');
+
+function setFreqPreset(base, dim) {
+  freqBaseSlider.value = base;
+  freqDimSlider.value = dim;
+  drawFrequency();
+}
+
+function drawFrequency() {
+  const canvas = document.getElementById('freqCanvas');
+  const { ctx, w, h } = canvasDPR(canvas);
+  const base = parseInt(freqBaseSlider.value);
+  const dim = parseInt(freqDimSlider.value);
+  const numPairs = dim / 2;
+
+  document.getElementById('freqBaseVal').textContent = base.toLocaleString();
+  document.getElementById('freqDimVal').textContent = dim;
+
+  const freqs = [];
+  for (let i = 0; i < numPairs; i++) {
+    freqs.push(1.0 / Math.pow(base, (2 * i) / dim));
+  }
+
+  const padL = 60, padR = 30, padT = 40, padB = 50;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Axes
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB);
+  ctx.lineTo(w - padR, h - padB);
+  ctx.strokeStyle = getCSS('--border');
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Y axis label
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '11px sans-serif';
+  ctx.save();
+  ctx.translate(14, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('频率 θᵢ (log scale)', 0, 0);
+  ctx.restore();
+
+  // X axis label
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('维度对索引 i', w / 2, h - 8);
+
+  // Log scale for Y
+  const maxFreq = freqs[0];
+  const minFreq = freqs[numPairs - 1];
+  const logMax = Math.log10(maxFreq);
+  const logMin = Math.log10(Math.max(minFreq, 1e-15));
+
+  // Grid lines
+  ctx.strokeStyle = getCSS('--border-light');
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([3, 3]);
+  for (let exp = Math.floor(logMin); exp <= Math.ceil(logMax); exp++) {
+    const y = padT + plotH * (1 - (exp - logMin) / (logMax - logMin));
+    if (y >= padT && y <= h - padB) {
+      ctx.beginPath();
+      ctx.moveTo(padL, y); ctx.lineTo(w - padR, y);
+      ctx.stroke();
+      ctx.fillStyle = getCSS('--text-muted');
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`10^${exp}`, padL - 5, y + 4);
+    }
+  }
+  ctx.setLineDash([]);
+
+  // Bars
+  const barW = Math.max(2, plotW / numPairs * 0.7);
+  for (let i = 0; i < numPairs; i++) {
+    const x = padL + (i / numPairs) * plotW + barW * 0.15;
+    const logF = Math.log10(Math.max(freqs[i], 1e-15));
+    const barH = plotH * ((logF - logMin) / (logMax - logMin));
+    const t = i / (numPairs - 1);
+    const r = Math.round(230 - t * 130);
+    const g = Math.round(73 + t * 60);
+    const b = Math.round(128 + t * 25);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
+    ctx.fillRect(x, h - padB - barH, barW, barH);
+  }
+
+  // X tick labels
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.floor(numPairs / 8));
+  for (let i = 0; i < numPairs; i += step) {
+    const x = padL + (i / numPairs) * plotW + barW / 2;
+    ctx.fillText(i.toString(), x, h - padB + 15);
+  }
+
+  // Wavelength info
+  const maxWavelength = 2 * Math.PI / minFreq;
+  const minWavelength = 2 * Math.PI / maxFreq;
+  document.getElementById('freqInfo').innerHTML =
+    `最高频 θ₀ = ${maxFreq.toFixed(4)} (波长 ${minWavelength.toFixed(1)}) | ` +
+    `最低频 θ₍ᵈ/₂₋₁₎ = ${minFreq.toExponential(2)} (波长 ${maxWavelength.toExponential(1)}) | ` +
+    `可编码最大位置 ≈ ${Math.round(maxWavelength)}`;
+}
+
+freqBaseSlider.addEventListener('input', drawFrequency);
+freqDimSlider.addEventListener('input', drawFrequency);
+
+// ========== Demo 3: Dot Product Decay ==========
+const dpDimSlider = document.getElementById('dpDim');
+const dpBaseSlider = document.getElementById('dpBase');
+const dpMaxDistSlider = document.getElementById('dpMaxDist');
+let dpQ = null, dpK = null;
+
+function generateRandomQK(dim) {
+  const q = [], k = [];
+  for (let i = 0; i < dim; i++) {
+    q.push((Math.random() - 0.5) * 2);
+    k.push((Math.random() - 0.5) * 2);
+  }
+  // Normalize
+  const qNorm = Math.sqrt(q.reduce((s, v) => s + v * v, 0));
+  const kNorm = Math.sqrt(k.reduce((s, v) => s + v * v, 0));
+  return {
+    q: q.map(v => v / qNorm),
+    k: k.map(v => v / kNorm)
+  };
+}
+
+function computeRoPEDotProduct(q, k, relDist, base) {
+  const dim = q.length;
+  const numPairs = dim / 2;
+  let dot = 0;
+  for (let i = 0; i < numPairs; i++) {
+    const theta = 1.0 / Math.pow(base, (2 * i) / dim);
+    const angle = relDist * theta;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    const q1 = q[2 * i], q2 = q[2 * i + 1];
+    const k1 = k[2 * i], k2 = k[2 * i + 1];
+    // Rotated q: (q1*cos - q2*sin, q1*sin + q2*cos)
+    // Dot with k: (q1*cos - q2*sin)*k1 + (q1*sin + q2*cos)*k2
+    dot += (q1 * cosA - q2 * sinA) * k1 + (q1 * sinA + q2 * cosA) * k2;
+  }
+  return dot;
+}
+
+function regenDotProduct() {
+  const dim = parseInt(dpDimSlider.value);
+  const result = generateRandomQK(dim);
+  dpQ = result.q;
+  dpK = result.k;
+  drawDotProduct();
+}
+
+function drawDotProduct() {
+  const canvas = document.getElementById('dpCanvas');
+  const { ctx, w, h } = canvasDPR(canvas);
+  const dim = parseInt(dpDimSlider.value);
+  const base = parseInt(dpBaseSlider.value);
+  const maxDist = parseInt(dpMaxDistSlider.value);
+
+  document.getElementById('dpDimVal').textContent = dim;
+  document.getElementById('dpBaseVal').textContent = base.toLocaleString();
+  document.getElementById('dpMaxDistVal').textContent = maxDist;
+
+  if (!dpQ || dpQ.length !== dim) {
+    const result = generateRandomQK(dim);
+    dpQ = result.q;
+    dpK = result.k;
+  }
+
+  const padL = 60, padR = 30, padT = 30, padB = 45;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Compute dot products
+  const numPoints = Math.min(maxDist, 500);
+  const step = Math.max(1, maxDist / numPoints);
+  const dots = [];
+  let minDot = Infinity, maxDotVal = -Infinity;
+  for (let d = 0; d < maxDist; d += step) {
+    const dp = computeRoPEDotProduct(dpQ, dpK, d, base);
+    dots.push({ dist: d, dot: dp });
+    if (dp < minDot) minDot = dp;
+    if (dp > maxDotVal) maxDotVal = dp;
+  }
+  const range = Math.max(Math.abs(minDot), Math.abs(maxDotVal), 0.1);
+
+  // Axes
+  ctx.strokeStyle = getCSS('--border');
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB);
+  ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+
+  // Zero line
+  const zeroY = padT + plotH * (range / (2 * range));
+  ctx.strokeStyle = getCSS('--border-light');
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(padL, zeroY); ctx.lineTo(w - padR, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Y axis labels
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(range.toFixed(2), padL - 5, padT + 5);
+  ctx.fillText('0', padL - 5, zeroY + 4);
+  ctx.fillText((-range).toFixed(2), padL - 5, h - padB);
+
+  // X axis labels
+  ctx.textAlign = 'center';
+  const xStep = Math.max(1, Math.floor(maxDist / 5));
+  for (let d = 0; d <= maxDist; d += xStep) {
+    const x = padL + (d / maxDist) * plotW;
+    ctx.fillText(d.toString(), x, h - padB + 15);
+  }
+  ctx.fillText('相对距离 |m-n|', w / 2, h - 5);
+
+  // Plot line
+  ctx.beginPath();
+  dots.forEach((pt, i) => {
+    const x = padL + (pt.dist / maxDist) * plotW;
+    const y = padT + plotH * ((range - pt.dot) / (2 * range));
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = getCSS('--accent');
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Envelope (moving average)
+  const windowSize = Math.max(3, Math.floor(dots.length / 30));
+  ctx.beginPath();
+  let first = true;
+  for (let i = windowSize; i < dots.length - windowSize; i++) {
+    let sum = 0;
+    for (let j = -windowSize; j <= windowSize; j++) {
+      sum += Math.abs(dots[i + j].dot);
+    }
+    const avg = sum / (2 * windowSize + 1);
+    const x = padL + (dots[i].dist / maxDist) * plotW;
+    const y = padT + plotH * ((range - avg) / (2 * range));
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = getCSS('--shape-color');
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Legend
+  ctx.fillStyle = getCSS('--accent');
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillRect(padL + 10, padT + 8, 20, 2);
+  ctx.fillText('实际内积', padL + 35, padT + 13);
+
+  ctx.fillStyle = getCSS('--shape-color');
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(padL + 10, padT + 26);
+  ctx.lineTo(padL + 30, padT + 26);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillText('振幅包络 (移动平均)', padL + 35, padT + 30);
+
+  // Y label
+  ctx.save();
+  ctx.translate(12, h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.textAlign = 'center';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Q\'·K\' 内积', 0, 0);
+  ctx.restore();
+}
+
+dpDimSlider.addEventListener('input', () => { dpQ = null; drawDotProduct(); });
+dpBaseSlider.addEventListener('input', drawDotProduct);
+dpMaxDistSlider.addEventListener('input', drawDotProduct);
+
+// ========== Initial Draw ==========
+window.addEventListener('load', () => {
+  drawRotation();
+  drawFrequency();
+  drawDotProduct();
+});
+window.addEventListener('resize', () => {
+  drawRotation();
+  drawFrequency();
+  drawDotProduct();
+});
+</script>
+</body>
+</html>
