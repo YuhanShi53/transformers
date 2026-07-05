@@ -7,6 +7,18 @@
 
 `make style` or `make fix-repo` should be run as the final step before opening a PR.
 
+## Branch Strategy (CRITICAL)
+
+- **`main`** must stay identical to the official upstream `huggingface/transformers` main branch at all times. Never commit private changes to `main`.
+- **`main-private`** is the working branch for all private/local modifications. It is always rebased on top of `main`.
+- To sync with upstream: fetch `official/main` → fast-forward `main` → rebase `main-private` onto `main`.
+
+```bash
+git fetch official main
+git checkout main && git merge --ff-only official/main
+git checkout main-private && git rebase main
+```
+
 ## Local agent setup
 
 - Hosted review agents should discover this guidance from the committed root `AGENTS.md` / `CLAUDE.md` files.
