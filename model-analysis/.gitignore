@@ -1,0 +1,2 @@
+# Local-only download helper (contains machine-specific proxy path)
+download_model.sh
