@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Qwen3.5-35B-A3B 源码、模型结构与关键算法的图文交互式解读">
+<title>Qwen3.5-35B-A3B：模型结构与关键算法</title>
+<style>
+:root {
+  color-scheme: light;
+  --paper:#fcfcfa; --surface:#ffffff; --soft:#f4f5f2; --ink:#171916; --body:#323730; --muted:#687066;
+  --line:#d8ddd5; --line-strong:#aeb8aa; --accent:#245c46; --accent-2:#8b4b27; --accent-soft:#e8f1ec;
+  --blue:#285f8f; --blue-soft:#eaf1f7; --gold:#916819; --gold-soft:#f7f1df; --red:#9a3d3d; --red-soft:#f8eaea;
+  --purple:#66508f; --purple-soft:#f0ecf7; --shadow:0 10px 32px rgba(24,35,27,.08);
+  --serif:"Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong","Times New Roman",serif;
+  --sans:"Source Han Sans SC","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"SFMono-Regular","Cascadia Code","Liberation Mono",Consolas,monospace;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#151916; --surface:#1c211d; --soft:#222923; --ink:#eef1eb; --body:#cbd2c8; --muted:#98a296;
+  --line:#39423a; --line-strong:#59665b; --accent:#75b99a; --accent-2:#d39870; --accent-soft:#20372d;
+  --blue:#83b4df; --blue-soft:#1d3041; --gold:#d6b360; --gold-soft:#392f1c; --red:#df8888; --red-soft:#3b2424;
+  --purple:#b8a2df; --purple-soft:#302942; --shadow:0 12px 36px rgba(0,0,0,.28);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth;scroll-padding-top:76px} body{margin:0;background:var(--paper);color:var(--body);font:16px/1.78 var(--serif)}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px} button,input,select{font:inherit}
+.topbar{position:fixed;inset:0 0 auto 0;height:58px;z-index:50;display:flex;align-items:center;gap:12px;padding:0 20px;background:color-mix(in srgb,var(--paper) 91%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{font:700 14px/1.2 var(--sans);letter-spacing:.04em;color:var(--ink);white-space:nowrap}.top-spacer{flex:1}.icon-btn{border:1px solid var(--line);background:var(--surface);color:var(--body);border-radius:5px;padding:7px 11px;cursor:pointer;font:600 12px var(--sans)}.icon-btn:hover{border-color:var(--accent);color:var(--accent)}
+.toc{position:fixed;z-index:60;right:0;top:58px;bottom:0;width:310px;background:var(--surface);border-left:1px solid var(--line);padding:22px 18px;overflow:auto;transform:translateX(0);transition:transform .22s ease}.toc.hidden{transform:translateX(100%)}
+.toc h2{font:700 12px var(--sans);letter-spacing:.12em;text-transform:uppercase;margin:0 0 14px;color:var(--muted)}.toc a{display:block;padding:4px 8px;border-left:2px solid transparent;color:var(--muted);text-decoration:none;font:12px/1.45 var(--sans)}.toc a.level-3{padding-left:21px;font-size:11px}.toc a.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft)}
+main{width:min(1040px,calc(100% - 80px));margin:0 auto;padding:104px 0 100px;transition:transform .22s ease}body.toc-open main{transform:translateX(-112px)}
+header.report-header{border-bottom:3px double var(--line-strong);padding-bottom:32px;margin-bottom:48px}.eyebrow{font:700 12px var(--sans);letter-spacing:.16em;color:var(--accent);text-transform:uppercase}h1{font-size:clamp(32px,5vw,54px);line-height:1.15;color:var(--ink);margin:12px 0 14px;letter-spacing:-.025em}.lead{font-size:19px;line-height:1.7;max-width:830px;color:var(--body)}.meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font:12px var(--sans);color:var(--muted)}
+section{margin:64px 0;scroll-margin-top:76px}h2{font-size:30px;line-height:1.25;color:var(--ink);margin:0 0 24px;padding-bottom:10px;border-bottom:2px solid var(--ink)}h2 .secno{font:600 13px var(--sans);color:var(--accent);margin-right:12px;vertical-align:middle}h3{font-size:21px;line-height:1.35;color:var(--ink);margin:38px 0 13px}h4{font:700 15px var(--sans);color:var(--ink);margin:24px 0 8px}p{margin:9px 0 14px}ul,ol{margin:8px 0 16px;padding-left:1.45em}li{margin:4px 0}strong{color:var(--ink)}
+.abstract{columns:2;column-gap:36px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:18px 0}.abstract p{margin-top:0}.dropcap:first-letter{float:left;font-size:48px;line-height:.9;padding:7px 7px 0 0;color:var(--accent)}
+.facts{width:100%;border-collapse:collapse;margin:16px 0 22px;font-size:13px}.facts th,.facts td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.facts th{font:700 11px var(--sans);letter-spacing:.04em;color:var(--muted);background:var(--soft)}.facts td code{white-space:nowrap}.facts .key{font-weight:700;color:var(--ink)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}.dense-list{margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}.dense-list li{display:grid;grid-template-columns:130px 1fr;gap:14px;padding:8px 0;border-bottom:1px solid var(--line);margin:0}.dense-list b{font:700 12px var(--sans);color:var(--ink)}
+code{font:12.5px/1.5 var(--mono);color:var(--accent-2);background:var(--soft);padding:.1em .35em;border-radius:3px}pre{margin:16px 0;padding:15px 18px;overflow:auto;background:var(--soft);border-left:3px solid var(--accent);font:12px/1.62 var(--mono);color:var(--body)}pre code{padding:0;background:none;color:inherit}.formula{overflow:auto;margin:15px 0;padding:15px 20px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);text-align:center;font:italic 18px/1.7 "STIX Two Math","Cambria Math","Times New Roman",serif;color:var(--ink)}.formula small{display:block;font:11px var(--sans);color:var(--muted);font-style:normal}
+.note{margin:15px 0;padding:11px 15px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:14px}.note.warn{border-color:var(--gold);background:var(--gold-soft)}.note.audit{border-color:var(--purple);background:var(--purple-soft)}
+.evidence{display:inline-flex;align-items:center;margin:0 3px 3px 0;padding:2px 6px;border:1px solid var(--line);border-radius:3px;font:600 9px var(--sans);letter-spacing:.05em;color:var(--muted);text-decoration:none;vertical-align:middle}.e-config{border-color:var(--accent);color:var(--accent)}.e-code{border-color:var(--blue);color:var(--blue)}.e-weight{border-color:var(--purple);color:var(--purple)}.e-official{border-color:var(--gold);color:var(--gold)}.e-infer{border-style:dashed;border-color:var(--red);color:var(--red)}
+.diagram{margin:22px 0;padding:16px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:auto;text-align:center}.diagram svg{width:100%;height:auto;max-height:880px}.diagram text{font-family:var(--sans);fill:var(--ink)}.diagram .small{font-size:11px;fill:var(--muted)}.diagram .label{font-size:13px;font-weight:700}.diagram .node{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.2}.diagram .vision{fill:var(--blue-soft);stroke:var(--blue)}.diagram .linear{fill:var(--accent-soft);stroke:var(--accent)}.diagram .attn{fill:var(--gold-soft);stroke:var(--gold)}.diagram .moe{fill:var(--purple-soft);stroke:var(--purple)}.diagram .arrow{fill:none;stroke:var(--body);stroke-width:1.3;marker-end:url(#arrow)}.diagram .residual{fill:none;stroke:var(--accent-2);stroke-width:1.2;stroke-dasharray:4 3;marker-end:url(#arrow2)}
+.shape-flow{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:13px 0;font:11px var(--mono)}.shape-flow span{padding:5px 7px;border:1px solid var(--line);background:var(--surface)}.shape-flow i{color:var(--muted);font-style:normal}
+.demo{border-top:1px solid var(--line);margin:0}.demo:last-child{border-bottom:1px solid var(--line)}.demo summary{display:grid;grid-template-columns:46px 1fr auto;gap:12px;align-items:center;padding:15px 4px;cursor:pointer;list-style:none}.demo summary::-webkit-details-marker{display:none}.demo-index{font:700 11px var(--mono);color:var(--accent)}.demo-title{font:700 16px var(--sans);color:var(--ink)}.demo-sub{display:block;font:12px/1.45 var(--serif);color:var(--muted);margin-top:2px}.demo-toggle{font:600 11px var(--sans);color:var(--muted)}.demo[open] .demo-toggle::after{content:"收起"}.demo:not([open]) .demo-toggle::after{content:"展开"}.demo-body{padding:4px 0 25px 58px}.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0 14px;font:12px var(--sans)}.controls label{display:flex;gap:7px;align-items:center}.controls input[type=range]{width:150px;accent-color:var(--accent)}.controls output{min-width:38px;font:700 11px var(--mono);color:var(--accent)}.mini-btn{border:1px solid var(--line-strong);background:var(--surface);color:var(--body);padding:5px 9px;border-radius:3px;cursor:pointer;font:600 11px var(--sans)}.mini-btn:hover{border-color:var(--accent);color:var(--accent)}
+.viz{min-height:180px;padding:14px;border:1px solid var(--line);background:var(--surface);overflow:auto}.token-row{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.token{display:grid;place-items:center;min-width:34px;height:34px;border:1px solid var(--line-strong);background:var(--soft);font:10px var(--mono)}.token.visual{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}.token.active{outline:2px solid var(--accent);outline-offset:2px}.matrix{display:inline-grid;gap:3px;padding:7px;border:1px solid var(--line);background:var(--soft);vertical-align:middle}.cell{display:grid;place-items:center;width:40px;height:32px;background:var(--surface);border:1px solid var(--line);font:10px var(--mono)}.cell.hot{background:var(--accent-soft);color:var(--accent);font-weight:700}.step-caption{margin-top:10px;font:12px var(--sans);color:var(--muted)}canvas{display:block;width:100%;height:260px;border:1px solid var(--line);background:var(--surface)}
+.layer-strip{display:grid;grid-template-columns:repeat(40,minmax(13px,1fr));gap:3px}.layer-cell{height:38px;border:1px solid var(--accent);background:var(--accent-soft);cursor:pointer;font:9px var(--mono);display:grid;place-items:center}.layer-cell.full{border-color:var(--gold);background:var(--gold-soft)}.layer-cell.selected{outline:2px solid var(--ink);outline-offset:1px}
+.head-map{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}.qhead{padding:8px 3px;text-align:center;border:1px solid var(--blue);background:var(--blue-soft);font:10px var(--mono)}.qhead[data-kv="1"]{border-color:var(--gold);background:var(--gold-soft)}
+.expert-grid{display:grid;grid-template-columns:repeat(16,1fr);gap:3px}.expert{height:26px;display:grid;place-items:center;border:1px solid var(--line);font:8px var(--mono);background:var(--soft)}.expert.selected{background:var(--purple-soft);border-color:var(--purple);color:var(--purple);font-weight:700}.expert.shared{background:var(--gold-soft);border-color:var(--gold)}
+.bar-chart{display:grid;gap:7px}.bar-row{display:grid;grid-template-columns:150px 1fr 55px;gap:8px;align-items:center;font:11px var(--sans)}.bar-track{height:9px;background:var(--soft);border:1px solid var(--line)}.bar-fill{height:100%;background:var(--accent)}
+.benchmark-wrap{overflow:auto;margin:13px 0}.benchmark-wrap table{min-width:820px}.benchmark-wrap th:last-child,.benchmark-wrap td:last-child{background:var(--accent-soft);font-weight:700}.group-row td{font:700 11px var(--sans)!important;color:var(--accent)!important;background:var(--soft)!important;text-transform:uppercase;letter-spacing:.05em}.compact-chart{max-width:760px;margin:14px 0}.compact-chart .bar-row{grid-template-columns:180px 1fr 48px}
+.sources{counter-reset:src}.source{display:grid;grid-template-columns:34px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.source::before{counter-increment:src;content:counter(src,decimal-leading-zero);font:700 10px var(--mono);color:var(--accent)}.source b{font:700 13px var(--sans)}.source p{margin:2px 0;font-size:13px;color:var(--muted)}
+.footer{margin-top:70px;padding-top:18px;border-top:3px double var(--line-strong);font:11px var(--sans);color:var(--muted)}
+@media(max-width:1200px){body.toc-open main{transform:none}.toc{box-shadow:var(--shadow)}}
+@media(max-width:760px){main{width:min(100% - 30px,1040px);padding-top:88px}.topbar{padding:0 10px}.brand{max-width:52vw;overflow:hidden;text-overflow:ellipsis}.toc{width:min(88vw,330px)}.abstract{columns:1}.cols{grid-template-columns:1fr}.dense-list li{grid-template-columns:105px 1fr}.demo-body{padding-left:0}.layer-strip{grid-template-columns:repeat(10,1fr)}.expert-grid{grid-template-columns:repeat(8,1fr)}.bar-row{grid-template-columns:105px 1fr 42px}.diagram{margin-left:-8px;margin-right:-8px;padding-left:0;padding-right:0}}
+@media print{.topbar,.toc,.demo-toggle{display:none!important}main{width:100%;padding:0;transform:none!important}.demo:not([open]) .demo-body{display:block}.demo summary{page-break-after:avoid}section{break-inside:auto}.diagram,.formula,table{break-inside:avoid}}
+</style>
+</head>
+<body class="toc-open">
+<div class="topbar">
+  <div class="brand">Qwen3.5-35B-A3B · Architecture Analysis</div>
+  <div class="top-spacer"></div>
+  <button class="icon-btn" id="themeBtn" type="button" aria-label="切换日间夜间模式">◐ 日 / 夜</button>
+  <button class="icon-btn" id="tocBtn" type="button" aria-controls="toc" aria-expanded="true">☰ 目录</button>
+</div>
+<nav class="toc" id="toc" aria-label="全文目录"><h2>Contents</h2><div id="tocLinks"></div></nav>
+<main>
+<header class="report-header">
+  <div class="eyebrow">Source-grounded · Interactive · Multimodal MoE</div>
+  <h1>Qwen3.5-35B-A3B<br>模型结构与关键算法</h1>
+  <p class="lead">从 27 层视觉编码器到 40 层混合语言主干：沿着真实 <code>forward</code> 路径，拆解 Early Fusion、Gated DeltaNet、Gated GQA、稀疏 MoE、Multimodal RoPE 与 Multi-Token Prediction。</p>
+  <div class="meta"><span>研究型读者</span><span>Transformers modular source</span><span>Qwen official model card &amp; blog</span><span>2026-08-19</span></div>
+</header>
+
+<section id="overview">
+  <h2><span class="secno">01</span>模型总览</h2>
+  <div class="abstract">
+    <p class="dropcap">Qwen3.5-35B-A3B 是一个原生视觉—语言、decoder-only 的稀疏混合专家模型。模型拥有约 35B 总参数，但每个 token 只激活约 3B；语言主干把 30 层线性注意力与 10 层全注意力按 3:1 周期混排，以固定大小递归状态承接大部分长程计算，再由周期性的 GQA 恢复精确内容检索。</p>
+    <p>视觉侧不是外挂式 caption encoder：图像和视频先被 27 层 ViT 编码，经 2×2 spatial merger 映射到 2048 维；这些向量直接替换序列中的视觉占位 token，和文字 embedding 一同进入同一语言主干。这就是其“原生多模态”在发布推理代码中的具体落点。</p>
+  </div>
+  <table class="facts">
+    <thead><tr><th>子系统</th><th>关键配置</th><th>结构含义</th><th>证据</th></tr></thead>
+    <tbody>
+      <tr><td class="key">总体</td><td>35B total / 3B active</td><td>稀疏 MoE；每 token 只运行选中的专家和 shared expert</td><td><a class="evidence e-official" href="Qwen3.5/Qwen3.5-35B-A3B/README.md#L51">模型卡</a></td></tr>
+      <tr><td class="key">Language</td><td>40 layers, hidden 2048</td><td>10 组四层周期；词表与 LM head 均为 248,320</td><td><a class="evidence e-config" href="Qwen3.5/Qwen3.5-35B-A3B/config.json">CONFIG</a></td></tr>
+      <tr><td class="key">Mixer</td><td>30 GDN + 10 GQA</td><td>线性递归负责吞吐，全注意力层负责精确回看</td><td><a class="evidence e-code" href="../src/transformers/models/qwen3_5_moe/modular_qwen3_5_moe.py#L195">CODE</a></td></tr>
+      <tr><td class="key">MoE</td><td>256 → Top-8 + shared</td><td>routed expert 与 shared expert 的输出相加</td><td><a class="evidence e-config" href="Qwen3.5/Qwen3.5-35B-A3B/config.json">CONFIG</a></td></tr>
+      <tr><td class="key">Vision</td><td>27 layers, 1152 → 2048</td><td>16×16 patch、temporal patch 2、spatial merge 2</td><td><a class="evidence e-config" href="Qwen3.5/Qwen3.5-35B-A3B/config.json">CONFIG</a></td></tr>
+      <tr><td class="key">Context</td><td>262,144 native</td><td>模型卡称可扩展到约 1.01M；并非默认原生长度</td><td><a class="evidence e-official" href="Qwen3.5/Qwen3.5-35B-A3B/README.md#L72">模型卡</a></td></tr>
+      <tr><td class="key">MTP</td><td>1 auxiliary layer</td><td>checkpoint 带独立 MTP 权重，服务 speculative decoding</td><td><a class="evidence e-weight" href="Qwen3.5/Qwen3.5-35B-A3B/model.safetensors.index.json">WEIGHT</a></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="overview-architecture">端到端架构</h3>
+  <div class="diagram" aria-label="Qwen3.5-35B-A3B 总体架构图">
+  <svg viewBox="0 0 980 820" role="img" aria-labelledby="archTitle archDesc">
+    <title id="archTitle">Qwen3.5-35B-A3B 总体架构</title><desc id="archDesc">视觉与文本两条输入路径经 Early Fusion 后进入 40 层混合语言模型。</desc>
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--body)"/></marker><marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--accent-2)"/></marker></defs>
+    <text x="490" y="25" text-anchor="middle" class="small">Qwen3.5-35B-A3B · Causal VLM · Sparse MoE</text>
+    <rect x="75" y="55" width="245" height="52" rx="4" class="node vision"/><text x="197" y="78" text-anchor="middle" class="label">Image / Video</text><text x="197" y="96" text-anchor="middle" class="small">dynamic grid (T,H,W)</text>
+    <rect x="660" y="55" width="245" height="52" rx="4" class="node"/><text x="782" y="78" text-anchor="middle" class="label">Text Tokens</text><text x="782" y="96" text-anchor="middle" class="small">vocab = 248,320</text>
+    <path d="M197 107V136" class="arrow"/><rect x="75" y="136" width="245" height="58" rx="4" class="node vision"/><text x="197" y="159" text-anchor="middle" class="label">3D Patch Embedding</text><text x="197" y="178" text-anchor="middle" class="small">2 × 16 × 16 · width 1152</text>
+    <path d="M197 194V223" class="arrow"/><rect x="48" y="223" width="299" height="100" rx="4" class="node vision"/><text x="197" y="247" text-anchor="middle" class="label">Vision Transformer × 27</text><text x="197" y="269" text-anchor="middle" class="small">LayerNorm → Self-Attention → Add</text><text x="197" y="287" text-anchor="middle" class="small">LayerNorm → MLP(GELU) → Add</text><text x="197" y="307" text-anchor="middle" class="small">2D absolute position + Vision RoPE</text>
+    <path d="M197 323V352" class="arrow"/><rect x="75" y="352" width="245" height="58" rx="4" class="node vision"/><text x="197" y="376" text-anchor="middle" class="label">Spatial Merger 2 × 2</text><text x="197" y="395" text-anchor="middle" class="small">4 × 1152 → 2048</text>
+    <path d="M782 107V381H610" class="arrow"/><rect x="610" y="352" width="245" height="58" rx="4" class="node"/><text x="732" y="376" text-anchor="middle" class="label">Token Embedding</text><text x="732" y="395" text-anchor="middle" class="small">token id → ℝ²⁰⁴⁸</text>
+    <path d="M320 381H432" class="arrow"/><path d="M610 381H548" class="arrow"/><rect x="432" y="344" width="116" height="74" rx="37" class="node attn"/><text x="490" y="374" text-anchor="middle" class="label">Early</text><text x="490" y="392" text-anchor="middle" class="label">Fusion</text><text x="490" y="410" text-anchor="middle" class="small">masked_scatter</text>
+    <path d="M490 418V451" class="arrow"/><rect x="315" y="451" width="350" height="53" rx="4" class="node"/><text x="490" y="474" text-anchor="middle" class="label">Unified Multimodal Sequence</text><text x="490" y="492" text-anchor="middle" class="small">text / image / video embeddings + M-RoPE</text>
+    <path d="M490 504V535" class="arrow"/><rect x="260" y="535" width="460" height="168" rx="5" class="node"/><text x="490" y="559" text-anchor="middle" class="label">Hybrid Language Model × 10 groups</text>
+    <rect x="295" y="578" width="390" height="48" rx="4" class="node linear"/><text x="490" y="598" text-anchor="middle" class="label">Gated DeltaNet → Sparse MoE</text><text x="490" y="616" text-anchor="middle" class="small">× 3 · recurrent state · Top-8 + shared</text>
+    <path d="M490 626V643" class="arrow"/><rect x="295" y="643" width="390" height="48" rx="4" class="node attn"/><text x="490" y="663" text-anchor="middle" class="label">Gated GQA → Sparse MoE</text><text x="490" y="681" text-anchor="middle" class="small">× 1 · 16Q / 2KV · partial M-RoPE</text>
+    <path d="M490 703V730" class="arrow"/><rect x="315" y="730" width="350" height="48" rx="4" class="node"/><text x="490" y="750" text-anchor="middle" class="label">Final RMSNorm → LM Head</text><text x="490" y="768" text-anchor="middle" class="small">ℝ²⁰⁴⁸ → 248,320 logits</text>
+    <rect x="760" y="555" width="164" height="53" rx="4" class="node moe"/><text x="842" y="577" text-anchor="middle" class="label">MTP × 1</text><text x="842" y="595" text-anchor="middle" class="small">speculative draft head</text><path d="M720 581H760" class="arrow"/>
+    <text x="490" y="806" text-anchor="middle" class="small">30 linear-attention layers + 10 full-attention layers · 40 MoE blocks</text>
+  </svg>
+  </div>
+  <p class="note audit"><strong>读图边界。</strong>图中 MTP 以旁路表示，因为标准 Transformers 的 <code>Qwen3_5MoeForCausalLM</code> 将 <code>mtp.*</code> 列为可忽略的额外权重；发布 checkpoint 确实含 MTP 模块，但实际 speculative decoding 由 vLLM/SGLang 的专用路径加载，而不是常规 HF <code>forward</code>。</p>
+</section>
+
+<section id="vision">
+  <h2><span class="secno">02</span>Vision</h2>
+  <p>视觉侧的任务是把不同分辨率、不同帧数的媒体变成与语言隐空间同宽的 token。它没有跨注意力 connector；对齐发生在 merger 的输出维度和后续 placeholder 替换上。<a class="evidence e-code" href="../src/transformers/models/qwen3_5/modular_qwen3_5.py#L437">CODE</a></p>
+
+  <h3 id="vision-input">2.1 动态网格与 3D Patch Embedding</h3>
+  <p>预处理器用 <code>grid_thw=(T,H,W)</code> 描述每个样本的 patch 网格。卷积核覆盖 2 个时间片和 16×16 空间像素，因此一枚 patch 对应 <code>3×2×16×16=1536</code> 个标量，再投影到视觉宽度 1152。静态图像会在时间维满足相同接口；视频则保留时间网格。</p>
+  <div class="shape-flow"><span>pixels [N, 3, 2, 16, 16]</span><i>→ flatten</i><span>[N, 1536]</span><i>→ Conv3D / Linear</i><span>[N, 1152]</span></div>
+  <p>这里的 <code>N=Σ(T·H·W)</code> 是 batch 内所有媒体的 patch 总数。源码之后通过累积 <code>cu_seqlens</code> 把不同媒体打包送入非因果视觉注意力，避免把不同样本互相注意。</p>
+
+  <h3 id="vision-position">2.2 绝对位置插值与 Vision RoPE</h3>
+  <p>Qwen3.5 同时使用两套位置讯号：可学习二维位置表经双线性权重插值后直接加到 patch embedding；另一套 Vision RoPE 由实际网格坐标生成 cos/sin，进入每个视觉注意力层。前者提供全局空间先验，后者直接改变 Q/K 的相对相位。</p>
+  <pre><code>bilinear_indices, bilinear_weights = get_vision_bilinear_indices_and_weights(grid_thw)
+hidden = patch_embed(pixels)
+hidden += Σ pos_embed[index] · bilinear_weight
+position_embeddings = (rotary(grid_position).cos(), rotary(grid_position).sin())</code></pre>
+
+  <h3 id="vision-vit">2.3 27 层 Vision Transformer</h3>
+  <div class="diagram">
+  <svg viewBox="0 0 900 500" role="img" aria-label="Qwen3.5 Vision Transformer Block">
+    <rect x="210" y="30" width="480" height="430" rx="6" class="node vision"/><text x="450" y="56" text-anchor="middle" class="label">Vision Block × 27 · width 1152</text>
+    <rect x="350" y="78" width="200" height="38" rx="3" class="node"/><text x="450" y="102" text-anchor="middle" class="label">LayerNorm</text><path d="M450 116V141" class="arrow"/>
+    <rect x="315" y="141" width="270" height="58" rx="3" class="node attn"/><text x="450" y="164" text-anchor="middle" class="label">Vision Self-Attention</text><text x="450" y="184" text-anchor="middle" class="small">16 heads · RoPE · packed non-causal</text><path d="M450 199V224" class="arrow"/>
+    <circle cx="450" cy="241" r="17" class="node"/><text x="450" y="246" text-anchor="middle" class="label">+</text><path d="M450 258V283" class="arrow"/><path d="M350 97H270V241H431" class="residual"/>
+    <rect x="350" y="283" width="200" height="38" rx="3" class="node"/><text x="450" y="307" text-anchor="middle" class="label">LayerNorm</text><path d="M450 321V346" class="arrow"/>
+    <rect x="315" y="346" width="270" height="58" rx="3" class="node linear"/><text x="450" y="370" text-anchor="middle" class="label">MLP · 1152 → 4304 → 1152</text><text x="450" y="390" text-anchor="middle" class="small">GELU-tanh</text><path d="M450 404V429" class="arrow"/>
+    <circle cx="450" cy="443" r="17" class="node"/><text x="450" y="448" text-anchor="middle" class="label">+</text><path d="M350 302H270V443H431" class="residual"/>
+    <text x="720" y="170" class="small">cu_seqlens 隔离媒体样本</text><text x="720" y="190" class="small">无 causal mask</text><text x="720" y="376" class="small">intermediate = 4304</text>
+  </svg>
+  </div>
+  <p>视觉注意力对每个媒体样本内部的 <code>T·H·W</code> patch 做完整、非因果 self-attention。27 层循环完成后，返回的 <code>last_hidden_state</code> 仍是 1152 维 patch 序列；真正给语言模型的是 merger 的 <code>pooler_output</code>。</p>
+
+  <h3 id="vision-merger">2.4 Spatial Merger：从 patch 到视觉 token</h3>
+  <p><code>spatial_merge_size=2</code> 表示每个时间位置把相邻 2×2 patch 聚成一个视觉 token。四个 1152 维向量先按空间邻域拼接，再经归一化和两层投影映射到语言宽度 2048。</p>
+  <div class="shape-flow"><span>[T,H,W,1152]</span><i>→ 2×2 shuffle</i><span>[T,H/2,W/2,4608]</span><i>→ MLP merger</i><span>[T,H/2,W/2,2048]</span></div>
+  <div class="formula">N<sub>visual</sub> = T · H · W / 2² <small>每个图像或视频在语言序列中占用的视觉 token 数</small></div>
+  <p class="note"><strong>没有 DeepStack。</strong>目标配置的 <code>deepstack_visual_indexes=[]</code>，且 Qwen3.5 VisionModel 初始化后删除了对应 merger list；因此视觉特征只在输入 embedding 层融合，不应画出向多个语言层注入视觉特征的路径。</p>
+
+  <h3 id="vision-fusion">2.5 Early Fusion：视觉向量替换占位 token</h3>
+  <p>processor 先在 <code>input_ids</code> 中放置与视觉 token 数等量的特殊占位符。模型取得视觉特征后，用 <code>get_placeholder_mask</code> 检查数量与位置，再通过 <code>masked_scatter</code> 把对应的文字 embedding 原位替换成视觉 embedding。序列长度和因果顺序不变，模态身份由 token 类型与三维位置坐标保留。</p>
+  <pre><code>inputs_embeds = embed_tokens(input_ids)                # [B, S, 2048]
+image_embeds = visual(pixel_values).pooler_output      # [Nvis, 2048]
+image_mask, _ = get_placeholder_mask(input_ids, image_features=image_embeds)
+inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</code></pre>
+  <p>这不是把视觉特征追加到文本末尾，也不是 decoder 对 vision tower 做 cross-attention；视觉 token 从第一层起就与文字 token 处于同一 causal 序列。参见 <a href="#demo-fusion">Early Fusion 交互演示</a>。</p>
+
+  <h3 id="vision-mrope">2.6 四路位置索引</h3>
+  <p><code>Qwen3_5TextModel.forward</code> 接收形状为 <code>[4,B,S]</code> 的位置索引：第 0 路作为普通文本位置和 causal mask 位置；后 3 路进入 Multimodal RoPE，分别承载时间、高度、宽度。纯文本时四路相同；视觉 span 内三路按网格变化。</p>
+  <table class="facts"><thead><tr><th>索引通道</th><th>文本 token</th><th>视觉 token</th><th>用途</th></tr></thead><tbody>
+    <tr><td>0 · text</td><td>单调递增</td><td>序列位置</td><td>causal mask / 通用位置</td></tr>
+    <tr><td>1 · temporal</td><td>复制文本位置</td><td>帧或时间 patch 坐标</td><td>M-RoPE 时间 section</td></tr>
+    <tr><td>2 · height</td><td>复制文本位置</td><td>合并前高度坐标</td><td>M-RoPE 高度 section</td></tr>
+    <tr><td>3 · width</td><td>复制文本位置</td><td>合并前宽度坐标</td><td>M-RoPE 宽度 section</td></tr>
+  </tbody></table>
+</section>
+
+<section id="language">
+  <h2><span class="secno">03</span>Language Model</h2>
+  <p>语言主干的核心不是单一 attention 变体，而是三种稀疏性的叠加：层级上只有四分之一层使用全注意力；head 级别由 16 个 query head 共享 2 个 KV head；FFN 级别每 token 只路由到 256 个专家中的 8 个。三者分别减少序列、缓存和参数激活成本。</p>
+
+  <h3 id="language-path">3.1 从统一 embedding 到 logits</h3>
+  <div class="shape-flow"><span>input ids / fused embeds [B,S,2048]</span><i>→ 40 decoder layers</i><span>hidden [B,S,2048]</span><i>→ RMSNorm</i><span>LM Head</span><i>→</i><span>logits [B,S,248320]</span></div>
+  <p>每层都采用 Pre-Norm，并保持残差流宽度 2048。不论 token mixer 是 DeltaNet 还是 GQA，后半段始终是同一个 Sparse MoE。Embedding 与 LM head 在权重索引中是独立参数，并未声明 tied weights。<a class="evidence e-weight" href="Qwen3.5/Qwen3.5-35B-A3B/model.safetensors.index.json">WEIGHT</a></p>
+
+  <h3 id="language-layout">3.2 40 层混合布局</h3>
+  <p>配置中的 <code>layer_types</code> 逐层展开为十个四层组：每组前 3 层是 <code>linear_attention</code>，第 4 层是 <code>full_attention</code>。若以源码的 0-based 编号计，全注意力层为 3、7、11、15、19、23、27、31、35、39。</p>
+  <pre><code>for group in range(10):
+    layer[4g + 0] = GatedDeltaNet → SparseMoE
+    layer[4g + 1] = GatedDeltaNet → SparseMoE
+    layer[4g + 2] = GatedDeltaNet → SparseMoE
+    layer[4g + 3] = GatedGQA      → SparseMoE</code></pre>
+  <p>混合设计利用 GDN 的线性时间递推承担绝大多数层，同时每隔三层用完整 causal attention 重新访问显式历史。官方 Qwen3-Next 消融将其概括为：纯线性注意力长序列高效但精确 recall 较弱；纯全注意力 recall 强但代价高；3:1 混合在性能与效率之间更优。<a class="evidence e-official" href="https://qwen.ai/blog?id=e34c4305036ce60d55a0791b170337c2b70ae51d">官方博客</a></p>
+  <p>参见 <a href="#demo-layers">40 层时间轴演示</a>。</p>
+
+  <h3 id="language-decoder">3.3 Decoder Layer 的共同骨架</h3>
+  <div class="diagram">
+  <svg viewBox="0 0 920 560" role="img" aria-label="Qwen3.5 MoE Decoder Layer">
+    <rect x="220" y="24" width="480" height="510" rx="6" class="node"/><text x="460" y="50" text-anchor="middle" class="label">Qwen3_5MoeDecoderLayer × 40</text>
+    <rect x="355" y="73" width="210" height="38" rx="3" class="node"/><text x="460" y="97" text-anchor="middle" class="label">Input RMSNorm</text><path d="M460 111V137" class="arrow"/>
+    <rect x="300" y="137" width="320" height="74" rx="4" class="node linear"/><text x="460" y="162" text-anchor="middle" class="label">Token Mixer</text><text x="460" y="184" text-anchor="middle" class="small">Gated DeltaNet (30 layers)</text><text x="460" y="201" text-anchor="middle" class="small">or Gated GQA (10 layers)</text><path d="M460 211V239" class="arrow"/>
+    <circle cx="460" cy="256" r="17" class="node"/><text x="460" y="261" text-anchor="middle" class="label">+</text><path d="M355 92H270V256H441" class="residual"/><path d="M460 273V301" class="arrow"/>
+    <rect x="355" y="301" width="210" height="38" rx="3" class="node"/><text x="460" y="325" text-anchor="middle" class="label">Post-Attention RMSNorm</text><path d="M460 339V365" class="arrow"/>
+    <rect x="300" y="365" width="320" height="75" rx="4" class="node moe"/><text x="460" y="390" text-anchor="middle" class="label">Sparse MoE</text><text x="460" y="411" text-anchor="middle" class="small">Top-8 / 256 routed experts</text><text x="460" y="428" text-anchor="middle" class="small">+ gated shared expert</text><path d="M460 440V467" class="arrow"/>
+    <circle cx="460" cy="484" r="17" class="node"/><text x="460" y="489" text-anchor="middle" class="label">+</text><path d="M355 320H270V484H441" class="residual"/><path d="M460 501V523" class="arrow"/>
+    <text x="725" y="177" class="small">Pre-Norm</text><text x="725" y="197" class="small">残差绕过 mixer</text><text x="725" y="402" class="small">每层都执行 MoE</text><text x="725" y="422" class="small">残差绕过专家</text>
+  </svg>
+  </div>
+  <p>两条 residual 都取自归一化之前：<code>x ← x + Mixer(Norm(x))</code>，再执行 <code>x ← x + MoE(Norm(x))</code>。这种结构让更换 token mixer 不影响 FFN/残差接口。</p>
+
+  <h3 id="language-gdn">3.4 Gated DeltaNet：可学习遗忘的矩阵记忆</h3>
+  <p>对输入 <code>x∈ℝ²⁰⁴⁸</code>，Qwen3.5 使用分离投影生成 Q、K、V、输出门 z、写入门 β 和衰减参数 a。Q/K 有 16 个 128 维 head，V 有 32 个 128 维 head；源码把每个 Q/K head 重复两次，与 32 个 value head 对齐。</p>
+  <table class="facts"><thead><tr><th>量</th><th>投影后形状</th><th>作用</th></tr></thead><tbody>
+    <tr><td>Q, K</td><td><code>[B,S,16,128]</code> → repeat → <code>[B,S,32,128]</code></td><td>读取地址与写入地址；进入 kernel 前 L2 normalize</td></tr>
+    <tr><td>V, z</td><td><code>[B,S,32,128]</code></td><td>写入内容与 gated RMSNorm 输出门</td></tr>
+    <tr><td>β</td><td><code>[B,S,32]</code></td><td><code>sigmoid(b)</code>，控制 delta 修正强度</td></tr>
+    <tr><td>g</td><td><code>[B,S,32]</code></td><td><code>-exp(A_log)·softplus(a+dt_bias)</code>，取指数后成为 (0,1] 衰减</td></tr>
+    <tr><td>S<sub>t</sub></td><td><code>[B,32,128,128]</code></td><td>每层固定大小 recurrent state</td></tr>
+  </tbody></table>
+  <p>Q/K/V 先经过 kernel size 4 的 depthwise causal convolution 和 SiLU，以极低成本注入最近 4 个位置的局部顺序。核心 delta rule 可按单个 head 写成：</p>
+  <div class="formula">
+    S̃<sub>t</sub> = e<sup>g<sub>t</sub></sup> S<sub>t−1</sub><br>
+    v̂<sub>t</sub> = S̃<sub>t</sub><sup>T</sup> k<sub>t</sub>, &emsp; δ<sub>t</sub> = β<sub>t</sub>(v<sub>t</sub>−v̂<sub>t</sub>)<br>
+    S<sub>t</sub> = S̃<sub>t</sub> + k<sub>t</sub>δ<sub>t</sub><sup>T</sup>, &emsp; o<sub>t</sub> = S<sub>t</sub><sup>T</sup>q<sub>t</sub>
+    <small>先遗忘旧状态，再按当前 key 读取预测；只写入预测误差，因此称为 delta update。</small>
+  </div>
+  <p>若状态对当前 key 已能还原 value，则 <code>v−v̂≈0</code>，无需重复写入；若预测错误，外积 <code>k δᵀ</code> 定向修正相应地址。与把所有 K/V 留在缓存不同，状态大小不随上下文增长，但有限矩阵会产生压缩与干扰。</p>
+  <h4>Prefill 与 decode</h4>
+  <ul>
+    <li><strong>多 token prefill / chunk continuation：</strong>调用 chunk gated-delta kernel；有历史缓存时先把卷积 state 拼到 chunk 左边，再只保留当前 chunk 输出。</li>
+    <li><strong>单 token decode：</strong>调用 fused recurrent kernel，原位更新卷积 state 和 recurrent state。</li>
+    <li><strong>两类缓存：</strong>每个 GDN 层保存最近 4 步的卷积上下文，以及每个 value head 的 128×128 状态矩阵。</li>
+  </ul>
+  <p>参见 <a href="#demo-gdn">Gated DeltaNet 逐步矩阵演示</a>。</p>
+
+  <h3 id="language-gqa">3.5 Gated GQA：周期性的精确内容检索</h3>
+  <p>全注意力层使用 16 个 query heads、2 个 KV heads 和 256 维 head。KV 共享把每 token、每层的缓存宽度从 MHA 的 <code>2×16×256</code> 降到 <code>2×2×256</code>，理论上缩小 8 倍；query 仍保留 16 个子空间。</p>
+  <div class="formula">Q,G = split(W<sub>qg</sub>x), &nbsp; K=W<sub>k</sub>x, &nbsp; V=W<sub>v</sub>x<br>Y = W<sub>o</sub>[Attention(RoPE(Q),RoPE(K),V) ⊙ σ(G)]<small>输出门在 head 拼接后、o_proj 之前逐元素调制注意力结果。</small></div>
+  <p><code>q_proj</code> 一次产生 query 与同形 gate，所以输出 gate 不是标量 head gate，而是每 token、每 query 通道的细粒度 sigmoid。Q/K 在 RoPE 前做 RMSNorm；RoPE 只覆盖每 head 前 64 维，即 <code>256×0.25</code>。剩余 192 维不旋转，兼顾位置敏感性和长距离外推。</p>
+  <table class="facts"><thead><tr><th>结构</th><th>Q heads</th><th>KV heads</th><th>每 token KV 元素/层</th><th>特点</th></tr></thead><tbody>
+    <tr><td>MHA 对照</td><td>16</td><td>16</td><td>8192</td><td>每个 Q head 独立 K/V，缓存最大</td></tr>
+    <tr><td>本模型 GQA</td><td>16</td><td>2</td><td>1024</td><td>每 8 个 Q heads 共享一组 K/V</td></tr>
+    <tr><td>MQA 对照</td><td>16</td><td>1</td><td>512</td><td>缓存更小，但共享更强</td></tr>
+  </tbody></table>
+  <p>参见 <a href="#demo-gqa">Gated GQA head-sharing 演示</a>。</p>
+
+  <h3 id="language-mrope">3.6 Partial Multimodal RoPE</h3>
+  <p>配置给出 <code>rope_theta=10,000,000</code>、<code>partial_rotary_factor=0.25</code> 和 <code>mrope_section=[11,11,10]</code>。全注意力 head 维 256，因此实际 rotary 维度为 64，包含 32 对二维旋转；三个 section 的 11+11+10 正好分配这 32 对频率，并以 interleaved 方式应用时间、高度、宽度坐标。</p>
+  <div class="formula">θ<sub>i</sub> = 10,000,000<sup>−2i/64</sup>, &emsp; R(p<sub>t</sub>,p<sub>h</sub>,p<sub>w</sub>) = R<sub>t</sub><sup>(11)</sup> ⊕ R<sub>h</sub><sup>(11)</sup> ⊕ R<sub>w</sub><sup>(10)</sup><small>上式表达 section 数量关系；具体实现交错排列，而不是简单连续拼接。</small></div>
+  <p>GDN 本身不使用 RoPE；M-RoPE 只在十个全注意力层提供位置相位。这使位置编码的显式计算也沿层维稀疏化。参见 <a href="#demo-mrope">三轴旋转演示</a>。</p>
+
+  <h3 id="language-moe">3.7 Sparse MoE：256 选 8，再加 shared expert</h3>
+  <p>每层的 router 是一个 <code>256×2048</code> 权重矩阵。对扁平化 token hidden state 计算 256 个 logits，float32 softmax 后取 Top-8，再把这 8 个概率重新归一化。被选中的专家是 SwiGLU MLP，单专家中间宽度仅 512。</p>
+  <div class="formula">p = softmax(W<sub>r</sub>x), &emsp; I = TopK(p,8), &emsp; p̄<sub>i</sub> = p<sub>i</sub> / Σ<sub>j∈I</sub>p<sub>j</sub><br>y<sub>routed</sub> = Σ<sub>i∈I</sub>p̄<sub>i</sub>W<sub>2,i</sub>[SiLU(W<sub>g,i</sub>x) ⊙ W<sub>u,i</sub>x]<small>shared expert 走独立 SwiGLU，并由 shared_expert_gate 调制后与 routed 输出相加。</small></div>
+  <p>“35B / A3B”不能简单理解为每层恰有 3B 权重参与：激活量还包括 embedding、attention/GDN、8 个 routed experts、shared expert、LM head 等全路径参数；3B 是模型卡给出的整体近似 activated parameters。训练配置另有 <code>router_aux_loss_coef=0.001</code>，用于鼓励负载均衡。参见 <a href="#demo-moe">Top-k 路由演示</a>。</p>
+
+  <h3 id="language-stability">3.8 稳定性设计</h3>
+  <ul>
+    <li><strong>Zero-Centered RMSNorm：</strong>继承 Gemma3 风格，实际缩放为 <code>1 + weight</code>；权重以 0 初始化，使初始变换接近恒等。</li>
+    <li><strong>QK-Norm：</strong>GQA 对 Q/K 做 RMSNorm，GDN kernel 对 Q/K 做 L2 normalize，限制相似度尺度漂移。</li>
+    <li><strong>Attention output gate：</strong>官方 Qwen3-Next 博客将其与缓解 attention sink、massive activation 联系起来；源码显示 gate 确实逐元素乘在 attention 输出上。</li>
+    <li><strong>GDN state 使用 float32 路径：</strong><code>A_log</code> 与门控计算显式转 float，避免 fp16 下指数参数溢出。</li>
+  </ul>
+
+  <h3 id="language-mtp">3.9 Multi-Token Prediction</h3>
+  <p>配置声明 <code>mtp_num_hidden_layers=1</code>，权重索引包含 <code>mtp.pre_fc_norm_embedding</code>、<code>mtp.pre_fc_norm_hidden</code>、<code>mtp.fc</code>、一层 full-attention + MoE 和 <code>mtp.norm</code>。这说明辅助模块融合当前 hidden state 与候选 token embedding，再用一个额外 decoder layer 预测更远的 token。</p>
+  <p>官方模型卡称其经过 multi-step training；Qwen3-Next 博客说明目标既是训练时增强主模型，也是在推理时产生高接受率 draft。部署示例分别使用 SGLang <code>NEXTN</code> 和 vLLM <code>qwen3_next_mtp</code>。</p>
+  <p class="note warn"><strong>实现边界。</strong>HF 类的 <code>_keys_to_ignore_on_load_unexpected=[r"^mtp.*", ...]</code> 表明常规 Transformers 生成不会构造该旁路。checkpoint 结构能证明“权重存在”，官方部署命令能证明“专用引擎可用”，但不能据此声称当前 HF <code>forward</code> 已执行 MTP。</p>
+  <p>参见 <a href="#demo-mtp">MTP 验证时序演示</a>。</p>
+
+  <h3 id="language-context">3.10 长上下文：混合缓存而非零增长缓存</h3>
+  <p>30 个 GDN 层的 recurrent state 与序列长度无关，但 10 个全注意力层仍保存逐 token K/V。因此总缓存仍随序列长度线性增长，只是斜率显著低于 40 层全 GQA。忽略 dtype、batch 和实现对齐后：</p>
+  <div class="formula">C<sub>KV</sub>(L)=10·L·(2·2·256),\quad C<sub>GDN</sub>=30·(32·128·128 + 4·8192)<small>第一项随 L 线性增长；第二项为 recurrent matrix 与 Q/K/V depthwise-conv state 的近似常数元素数。</small></div>
+  <p>原生上下文上限为 262,144；模型卡另称可扩展至约 1,010,000。托管的 Qwen3.5-Flash 默认 1M context 还包含生产侧能力，不能与开源 checkpoint 的默认配置混为一谈。参见 <a href="#demo-cache">缓存增长演示</a>。</p>
+</section>
+
+<section id="interactive">
+  <h2><span class="secno">04</span>交互演示</h2>
+  <p>演示默认折叠；展开时才初始化绘图。数值采用便于观察的微型矩阵或归一化尺度，结构关系与源码一致，但不代表 checkpoint 的真实激活值。</p>
+
+  <details class="demo" id="demo-fusion" data-demo="fusion">
+    <summary><span class="demo-index">D01</span><span class="demo-title">Early Fusion<span class="demo-sub">观察视觉占位符如何被 2048 维视觉向量原位替换。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls">
+      <label>文本 token <input id="fusionText" type="range" min="4" max="14" value="8"><output id="fusionTextOut">8</output></label>
+      <label>视觉 token <input id="fusionVision" type="range" min="1" max="8" value="4"><output id="fusionVisionOut">4</output></label>
+      <button class="mini-btn" data-action="fusion-step">单步</button><button class="mini-btn" data-action="fusion-play">播放</button><button class="mini-btn" data-action="fusion-pause">暂停</button><button class="mini-btn" data-action="fusion-reset">重置</button>
+    </div><div class="viz"><h4>input_ids / inputs_embeds</h4><div class="token-row" id="fusionTokens"></div><div class="step-caption" id="fusionCaption"></div></div></div>
+  </details>
+
+  <details class="demo" id="demo-layers" data-demo="layers">
+    <summary><span class="demo-index">D02</span><span class="demo-title">40 层混合时间轴<span class="demo-sub">定位十个四层组中的 GDN、GQA 与缓存类型。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>层号 <input id="layerSlider" type="range" min="0" max="39" value="3"><output id="layerOut">3</output></label><button class="mini-btn" data-action="layer-prev">上一层</button><button class="mini-btn" data-action="layer-next">下一层</button><button class="mini-btn" data-action="layer-play">播放</button><button class="mini-btn" data-action="layer-pause">暂停</button><button class="mini-btn" data-action="layer-reset">重置</button></div><div class="viz"><div class="layer-strip" id="layerStrip"></div><div class="step-caption" id="layerCaption"></div></div></div>
+  </details>
+
+  <details class="demo" id="demo-gdn" data-demo="gdn">
+    <summary><span class="demo-index">D03</span><span class="demo-title">Gated DeltaNet 状态更新<span class="demo-sub">逐步计算衰减、旧值读取、delta 外积写入和 query 输出。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls">
+      <label>β <input id="gdnBeta" type="range" min="0" max="1" step="0.05" value="0.7"><output id="gdnBetaOut">0.70</output></label>
+      <label>decay <input id="gdnDecay" type="range" min="0" max="1" step="0.05" value="0.85"><output id="gdnDecayOut">0.85</output></label>
+      <label>v₁ <input id="gdnValue" type="range" min="-2" max="2" step="0.1" value="1.2"><output id="gdnValueOut">1.2</output></label>
+      <button class="mini-btn" data-action="gdn-step">单步</button><button class="mini-btn" data-action="gdn-play">播放</button><button class="mini-btn" data-action="gdn-pause">暂停</button><button class="mini-btn" data-action="gdn-reset">重置</button>
+    </div><div class="viz" id="gdnViz"></div></div>
+  </details>
+
+  <details class="demo" id="demo-gqa" data-demo="gqa">
+    <summary><span class="demo-index">D04</span><span class="demo-title">Gated GQA Head Sharing<span class="demo-sub">比较 16Q/2KV 与 MHA、MQA，并观察 partial RoPE 和输出门。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>结构 <select id="gqaMode"><option value="gqa">GQA · 2 KV</option><option value="mha">MHA · 16 KV</option><option value="mqa">MQA · 1 KV</option></select></label><label>输出 gate <input id="gqaGate" type="range" min="0" max="1" step="0.05" value="0.75"><output id="gqaGateOut">0.75</output></label><label>RoPE 比例 <input id="gqaRope" type="range" min="0" max="1" step="0.25" value="0.25"><output id="gqaRopeOut">25%</output></label></div><div class="viz"><div class="head-map" id="gqaHeads"></div><div class="step-caption" id="gqaCaption"></div></div></div>
+  </details>
+
+  <details class="demo" id="demo-moe" data-demo="moe">
+    <summary><span class="demo-index">D05</span><span class="demo-title">Sparse MoE Top-k Router<span class="demo-sub">从 256 路 softmax 中选出 Top-8，并加入 shared expert。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>logit seed <input id="moeSeed" type="range" min="1" max="99" value="17"><output id="moeSeedOut">17</output></label><label>温度 <input id="moeTemp" type="range" min="0.4" max="2" step="0.1" value="1"><output id="moeTempOut">1.0</output></label><button class="mini-btn" data-action="moe-random">重新路由</button></div><div class="viz"><div class="expert-grid" id="expertGrid"></div><div class="step-caption" id="moeCaption"></div></div></div>
+  </details>
+
+  <details class="demo" id="demo-mtp" data-demo="mtp">
+    <summary><span class="demo-index">D06</span><span class="demo-title">MTP Speculative Decoding<span class="demo-sub">播放 draft、并行验证、接受前缀和拒绝回退。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>接受长度 <input id="mtpAccept" type="range" min="0" max="4" value="3"><output id="mtpAcceptOut">3</output></label><button class="mini-btn" data-action="mtp-step">单步</button><button class="mini-btn" data-action="mtp-play">播放</button><button class="mini-btn" data-action="mtp-pause">暂停</button><button class="mini-btn" data-action="mtp-reset">重置</button></div><div class="viz" id="mtpViz"></div></div>
+  </details>
+
+  <details class="demo" id="demo-mrope" data-demo="mrope">
+    <summary><span class="demo-index">D07</span><span class="demo-title">M-RoPE 三轴旋转<span class="demo-sub">调整时间、高度、宽度坐标，观察 11/11/10 个频率对的相位。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>t <input id="ropeT" type="range" min="0" max="20" value="2"><output id="ropeTOut">2</output></label><label>h <input id="ropeH" type="range" min="0" max="20" value="5"><output id="ropeHOut">5</output></label><label>w <input id="ropeW" type="range" min="0" max="20" value="8"><output id="ropeWOut">8</output></label><label><input id="ropeText" type="checkbox"> 纯文本位置</label></div><canvas id="ropeCanvas" width="900" height="300" aria-label="M-RoPE 三轴相位图"></canvas></div>
+  </details>
+
+  <details class="demo" id="demo-cache" data-demo="cache">
+    <summary><span class="demo-index">D08</span><span class="demo-title">缓存复杂度<span class="demo-sub">比较 40 层全 GQA、纯递归状态与本模型 3:1 混合缓存。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body"><div class="controls"><label>上下文长度 <input id="cacheLen" type="range" min="1024" max="262144" step="1024" value="65536"><output id="cacheLenOut">65K</output></label><label>dtype bytes <select id="cacheDtype"><option value="2">BF16 / FP16</option><option value="1">INT8 / FP8</option><option value="4">FP32</option></select></label></div><canvas id="cacheCanvas" width="900" height="300" aria-label="缓存增长对比图"></canvas><div class="step-caption" id="cacheCaption"></div></div>
+  </details>
+</section>
+
+<section id="training">
+  <h2><span class="secno">05</span>训练路线</h2>
+  <p>Qwen3.5 官方博客从 power、efficiency、versatility 三条轴描述预训练，并把后训练收益主要归因于大规模扩展 RL 任务与环境。以下内容是<strong>家族级公开路线</strong>；博客尚未披露 35B-A3B 的数据混合比例、各损失权重或完整 RL 算法。</p>
+  <table class="facts"><thead><tr><th>阶段</th><th>公开设计</th><th>预期作用</th><th>证据边界</th></tr></thead><tbody>
+    <tr><td class="key">Pretraining · Power</td><td>更大规模视觉—文本 token；加强中英、多语言、STEM、推理数据与过滤</td><td>统一提升语言、推理与视觉基础能力</td><td>博客未给 35B 数据量和配比</td></tr>
+    <tr><td class="key">Pretraining · Efficiency</td><td>Qwen3-Next 混合架构、高稀疏 MoE、稳定性设计、MTP</td><td>降低长上下文 decode 成本，同时维持性能</td><td>博客吞吐倍数针对 397B 家族模型</td></tr>
+    <tr><td class="key">Pretraining · Versatility</td><td>Early text-vision fusion；扩展视觉、STEM、视频数据</td><td>让多模态成为主干能力而非后接适配</td><td>发布代码能验证 early fusion 路径</td></tr>
+    <tr><td class="key">Multilingual</td><td>覆盖从 119 扩至 201 种语言/方言；词表约 250K</td><td>官方称多数语言编码/解码效率提升 10–60%</td><td>目标配置词表为 padded 248,320</td></tr>
+    <tr><td class="key">Infrastructure</td><td>视觉与语言组件采用不同并行策略；利用 sparse activation 做计算重叠</td><td>混合图文视频训练接近纯文本基线吞吐</td><td>家族基础设施，不等同开源 HF 实现</td></tr>
+    <tr><td class="key">Native FP8</td><td>activation、MoE routing、GEMM 低精度；敏感层动态保留 BF16</td><td>官方称约减半 activation memory，并带来 &gt;10% 加速</td><td>训练系统结论，不是本地 checkpoint benchmark</td></tr>
+    <tr><td class="key">Post-training / RL</td><td>异步、训练—推理解耦；覆盖文本、多模态和多轮环境</td><td>动态负载均衡、故障恢复与更大 RL 环境规模</td><td>具体优化目标和采样配方未公开</td></tr>
+  </tbody></table>
+  <h3 id="training-interpretation">架构与训练为何相互依赖</h3>
+  <p>Early Fusion 只有在预训练阶段持续看到交错的文本、图像、视频 token，才可能把统一序列接口变成真正的跨模态推理能力；MoE 的高参数容量则需要 router balance 与分布式通信设计维持有效利用；GDN 的递归训练又要求 chunked 并行 kernel 才能把理论线性复杂度转化为训练吞吐。换言之，结构图中的三个“高效模块”都对应基础设施约束。</p>
+  <p class="note audit"><strong>不作反推。</strong>本文不从最终权重或 benchmark 反推数据来源、训练 token 总量、RL reward、loss mixing、蒸馏教师或安全对齐流程。官方表示更广泛任务的 scaling 结果将留待技术报告。</p>
+</section>
+
+<section id="results">
+  <h2><span class="secno">06</span>模型效果</h2>
+  <p>35B-A3B 的核心价值不是在所有项目上超过同系列 27B 或 122B，而是以约 3B 激活参数覆盖语言、代码、Agent 和视觉任务。以下数值均来自目标模型卡；不同 benchmark 的量纲、prompt、工具和 harness 不同，不能跨行直接平均。</p>
+
+  <h3 id="results-language">6.1 语言、推理与长上下文</h3>
+  <div class="compact-chart bar-chart" aria-label="语言代表指标">
+    <div class="bar-row"><span>MMLU-Pro · 知识</span><div class="bar-track"><div class="bar-fill" style="width:85.3%"></div></div><b>85.3</b></div>
+    <div class="bar-row"><span>GPQA Diamond · 推理</span><div class="bar-track"><div class="bar-fill" style="width:84.2%"></div></div><b>84.2</b></div>
+    <div class="bar-row"><span>IFEval · 指令</span><div class="bar-track"><div class="bar-fill" style="width:91.9%"></div></div><b>91.9</b></div>
+    <div class="bar-row"><span>LongBench v2 · 长文</span><div class="bar-track"><div class="bar-fill" style="width:59%"></div></div><b>59.0</b></div>
+    <div class="bar-row"><span>MMMLU · 多语言</span><div class="bar-track"><div class="bar-fill" style="width:85.2%"></div></div><b>85.2</b></div>
+  </div>
+  <p>知识与推理仍接近更大模型：MMLU-Pro 为 85.3，GPQA Diamond 为 84.2。长上下文结果更混合：LongBench v2 为 59.0，略低于同表的 Qwen3.5-27B（60.6）和 122B-A10B（60.2）；这说明“支持 262K”是容量边界，不等同于所有长文任务自动占优。</p>
+
+  <h3 id="results-agent">6.2 Coding 与 Agent</h3>
+  <table class="facts"><thead><tr><th>能力域</th><th>代表 benchmark</th><th>35B-A3B</th><th>读法</th></tr></thead><tbody>
+    <tr><td>Coding Agent</td><td>SWE-bench Verified</td><td><strong>69.2</strong></td><td>接近同表 122B 的 72.0；低于 27B 的 72.4</td></tr>
+    <tr><td>终端任务</td><td>Terminal Bench 2</td><td><strong>40.5</strong></td><td>明显高于较早开放模型，仍低于 122B 的 49.4</td></tr>
+    <tr><td>Function Calling</td><td>BFCL-V4</td><td><strong>67.3</strong></td><td>工具 schema 与调用正确性较强</td></tr>
+    <tr><td>多轮 Agent</td><td>TAU2-Bench</td><td><strong>81.2</strong></td><td>目标模型卡中的突出结果之一</td></tr>
+    <tr><td>Search Agent</td><td>WideSearch</td><td><strong>57.1</strong></td><td>官方使用 256K context 且不做 context management</td></tr>
+    <tr><td>Search Agent</td><td>BrowseComp / zh</td><td><strong>61.0 / 69.5</strong></td><td>搜索策略和历史裁剪方式会显著影响结果</td></tr>
+  </tbody></table>
+  <p>Agent 分数不仅是裸模型属性，也取决于工具协议、上下文折叠、搜索策略和运行次数。模型卡明确说明大多数 search agent 在累计工具响应达到阈值后裁剪旧响应，而 WideSearch 使用 256K 上下文且不做管理；因此不能把这些分数解读成单轮语言能力。</p>
+
+  <h3 id="results-vision">6.3 视觉、文档、空间与视频</h3>
+  <div class="compact-chart bar-chart" aria-label="视觉代表指标">
+    <div class="bar-row"><span>MMMU · 多学科视觉</span><div class="bar-track"><div class="bar-fill" style="width:81.4%"></div></div><b>81.4</b></div>
+    <div class="bar-row"><span>MathVision</span><div class="bar-track"><div class="bar-fill" style="width:83.9%"></div></div><b>83.9</b></div>
+    <div class="bar-row"><span>OmniDocBench 1.5</span><div class="bar-track"><div class="bar-fill" style="width:89.3%"></div></div><b>89.3</b></div>
+    <div class="bar-row"><span>CountBench · 空间计数</span><div class="bar-track"><div class="bar-fill" style="width:97.8%"></div></div><b>97.8</b></div>
+    <div class="bar-row"><span>VideoMME · 有字幕</span><div class="bar-track"><div class="bar-fill" style="width:86.6%"></div></div><b>86.6</b></div>
+    <div class="bar-row"><span>AndroidWorld · 视觉 Agent</span><div class="bar-track"><div class="bar-fill" style="width:71.1%"></div></div><b>71.1</b></div>
+  </div>
+  <p>视觉覆盖面比单一 VQA 更值得注意：文档 OCR（OCRBench 91.0）、视频（VideoMME 无字幕 82.5）、GUI/设备操作（ScreenSpot Pro 68.6、AndroidWorld 71.1）都由同一视觉塔和语言主干处理。它支持“原生多模态 Agent”的产品定位，但不同任务仍有明显短板，如 3D/深度相关的 Hypersim 仅 13.1。</p>
+  <p class="note warn"><strong>评测条件。</strong>MathVision 使用要求逐步推理并以 boxed 格式输出的固定 prompt；BabyVision、TIR-Bench 与 V* 同时报含 Code Interpreter / 不含 Code Interpreter 两种成绩。正文不把带工具分数当成纯视觉模型能力。</p>
+
+  <h3 id="results-position">6.4 综合判断</h3>
+  <ul>
+    <li><strong>强项：</strong>以很低的激活参数覆盖完整 VLM、长上下文与 Agent 栈；知识、推理、文档、视频和设备操作均达到可用的高水平。</li>
+    <li><strong>代价：</strong>35B 总权重仍决定存储和显存下限；MoE 的低 FLOPs 不等于单卡易部署，专家调度与带宽仍是瓶颈。</li>
+    <li><strong>相对定位：</strong>部分 benchmark 接近 122B-A10B，部分被 dense 27B 超过；它的主要优势是能力/激活成本，而非逐项绝对最佳。</li>
+    <li><strong>慎读官方比较：</strong>家族博客给出的 397B 相对 Qwen3-Max/Qwen3-235B 的吞吐倍数不能转写为 35B-A3B 实测吞吐。</li>
+  </ul>
+</section>
+
+<section id="audit">
+  <h2><span class="secno">07</span>证据审计与附录</h2>
+  <h3 id="audit-differences">7.1 论文叙事、配置与参考实现的边界</h3>
+  <table class="facts"><thead><tr><th>主题</th><th>可以确认</th><th>不能据此声称</th></tr></thead><tbody>
+    <tr><td class="key">Early Fusion</td><td>HF forward 用视觉向量替换 placeholder embedding，随后进入同一 LM</td><td>具体多模态训练数据比例或 curriculum</td></tr>
+    <tr><td class="key">GDN 加速</td><td>参考实现区分 chunk prefill 与 recurrent decode，并可调用 FLA/causal-conv kernel</td><td>任何具体硬件上的 35B 吞吐或延迟</td></tr>
+    <tr><td class="key">MTP</td><td>配置和 checkpoint 有一层 MTP 权重；官方引擎给出启用参数</td><td>常规 Transformers forward 已使用 MTP</td></tr>
+    <tr><td class="key">1M context</td><td>模型卡称可扩展至 1,010,000；Flash 托管版默认 1M</td><td>开源配置默认即 1M，或 1M 下效果无损</td></tr>
+    <tr><td class="key">3B active</td><td>模型卡给出整体近似激活参数</td><td>权重存储只有 3B，或每个请求只需加载 3B</td></tr>
+    <tr><td class="key">训练基础设施</td><td>官方公开异构并行、FP8、异步 RL 的家族设计</td><td>这些机制存在于 Transformers 推理源码</td></tr>
+  </tbody></table>
+
+  <h3 id="appendix-benchmarks">7.2 官方完整 Benchmark 表</h3>
+  <p>以下两表从本地官方模型卡转录，保留所有对照模型与分组。横向滚动查看；目标模型列以底色突出。</p>
+  <details class="demo appendix-table"><summary><span class="demo-index">A01</span><span class="demo-title">Language benchmark 完整表<span class="demo-sub">Knowledge、Instruction、Long Context、Reasoning、Coding、Agent、Search、Multilingualism。</span></span><span class="demo-toggle"></span></summary><div class="demo-body benchmark-wrap">
+<table class="facts benchmark-table">
+<thead><tr>
+<th></th>
+<th>GPT-5-mini 2025-08-07</th>
+<th>GPT-OSS-120B</th>
+<th>Qwen3-235B-A22B</th>
+<th>Qwen3.5-122B-A10B</th>
+<th>Qwen3.5-27B</th>
+<th>Qwen3.5-35B-A3B</th>
+</tr></thead>
+<tbody>
+<tr class="group-row"><td colspan="7">Knowledge</td></tr>
+<tr>
+<td>MMLU-Pro</td>
+<td>83.7</td>
+<td>80.8</td>
+<td>84.4</td>
+<td>86.7</td>
+<td>86.1</td>
+<td>85.3</td>
+</tr>
+<tr>
+<td>MMLU-Redux</td>
+<td>93.7</td>
+<td>91.0</td>
+<td>93.8</td>
+<td>94.0</td>
+<td>93.2</td>
+<td>93.3</td>
+</tr>
+<tr>
+<td>C-Eval</td>
+<td>82.2</td>
+<td>76.2</td>
+<td>92.1</td>
+<td>91.9</td>
+<td>90.5</td>
+<td>90.2</td>
+</tr>
+<tr>
+<td>SuperGPQA</td>
+<td>58.6</td>
+<td>54.6</td>
+<td>64.9</td>
+<td>67.1</td>
+<td>65.6</td>
+<td>63.4</td>
+</tr>
+<tr class="group-row"><td colspan="7">Instruction Following</td></tr>
+<tr>
+<td>IFEval</td>
+<td>93.9</td>
+<td>88.9</td>
+<td>87.8</td>
+<td>93.4</td>
+<td>95.0</td>
+<td>91.9</td>
+</tr>
+<tr>
+<td>IFBench</td>
+<td>75.4</td>
+<td>69.0</td>
+<td>51.7</td>
+<td>76.1</td>
+<td>76.5</td>
+<td>70.2</td>
+</tr>
+<tr>
+<td>MultiChallenge</td>
+<td>59.0</td>
+<td>45.3</td>
+<td>50.2</td>
+<td>61.5</td>
+<td>60.8</td>
+<td>60.0</td>
+</tr>
+<tr class="group-row"><td colspan="7">Long Context</td></tr>
+<tr>
+<td>AA-LCR</td>
+<td>68.0</td>
+<td>50.7</td>
+<td>60.0</td>
+<td>66.9</td>
+<td>66.1</td>
+<td>58.5</td>
+</tr>
+<tr>
+<td>LongBench v2</td>
+<td>56.8</td>
+<td>48.2</td>
+<td>54.8</td>
+<td>60.2</td>
+<td>60.6</td>
+<td>59.0</td>
+</tr>
+<tr class="group-row"><td colspan="7">STEM & Reasoning</td></tr>
+<tr>
+<td>HLE w/ CoT</td>
+<td>19.4</td>
+<td>14.9</td>
+<td>18.2</td>
+<td>25.3</td>
+<td>24.3</td>
+<td>22.4</td>
+</tr>
+<tr>
+<td>GPQA Diamond</td>
+<td>82.8</td>
+<td>80.1</td>
+<td>81.1</td>
+<td>86.6</td>
+<td>85.5</td>
+<td>84.2</td>
+</tr>
+<tr>
+<td>HMMT Feb 25</td>
+<td>89.2</td>
+<td>90.0</td>
+<td>85.1</td>
+<td>91.4</td>
+<td>92.0</td>
+<td>89.0</td>
+</tr>
+<tr>
+<td>HMMT Nov 25</td>
+<td>84.2</td>
+<td>90.0</td>
+<td>89.5</td>
+<td>90.3</td>
+<td>89.8</td>
+<td>89.2</td>
+</tr>
+<tr class="group-row"><td colspan="7">Coding</td></tr>
+<tr>
+<td>SWE-bench Verified</td>
+<td>72.0</td>
+<td>62.0</td>
+<td>--</td>
+<td>72.0</td>
+<td>72.4</td>
+<td>69.2</td>
+</tr>
+<tr>
+<td>Terminal Bench 2</td>
+<td>31.9</td>
+<td>18.7</td>
+<td>--</td>
+<td>49.4</td>
+<td>41.6</td>
+<td>40.5</td>
+</tr>
+<tr>
+<td>LiveCodeBench v6</td>
+<td>80.5</td>
+<td>82.7</td>
+<td>75.1</td>
+<td>78.9</td>
+<td>80.7</td>
+<td>74.6</td>
+</tr>
+<tr>
+<td>CodeForces</td>
+<td>2160</td>
+<td>2157</td>
+<td>2146</td>
+<td>2100</td>
+<td>1899</td>
+<td>2028</td>
+</tr>
+<tr>
+<td>OJBench</td>
+<td>40.4</td>
+<td>41.5</td>
+<td>32.7</td>
+<td>39.5</td>
+<td>40.1</td>
+<td>36.0</td>
+</tr>
+<tr>
+<td>FullStackBench en</td>
+<td>30.6</td>
+<td>58.9</td>
+<td>61.1</td>
+<td>62.6</td>
+<td>60.1</td>
+<td>58.1</td>
+</tr>
+<tr>
+<td>FullStackBench zh</td>
+<td>35.2</td>
+<td>60.4</td>
+<td>63.1</td>
+<td>58.7</td>
+<td>57.4</td>
+<td>55.0</td>
+</tr>
+<tr class="group-row"><td colspan="7">General Agent</td></tr>
+<tr>
+<td>BFCL-V4</td>
+<td>55.5</td>
+<td>--</td>
+<td>54.8</td>
+<td>72.2</td>
+<td>68.5</td>
+<td>67.3</td>
+</tr>
+<tr>
+<td>TAU2-Bench</td>
+<td>69.8</td>
+<td>--</td>
+<td>58.5</td>
+<td>79.5</td>
+<td>79.0</td>
+<td>81.2</td>
+</tr>
+<tr>
+<td>VITA-Bench</td>
+<td>13.9</td>
+<td>--</td>
+<td>31.6</td>
+<td>33.6</td>
+<td>41.9</td>
+<td>31.9</td>
+</tr>
+<tr>
+<td>DeepPlanning</td>
+<td>17.9</td>
+<td>--</td>
+<td>17.1</td>
+<td>24.1</td>
+<td>22.6</td>
+<td>22.8</td>
+</tr>
+<tr class="group-row"><td colspan="7">Search Agent</td></tr>
+<tr>
+<td>HLE w/ tool</td>
+<td>35.8</td>
+<td>19.0</td>
+<td>--</td>
+<td>47.5</td>
+<td>48.5</td>
+<td>47.4</td>
+</tr>
+<tr>
+<td>Browsecomp</td>
+<td>48.1</td>
+<td>41.1</td>
+<td>--</td>
+<td>63.8</td>
+<td>61.0</td>
+<td>61.0</td>
+</tr>
+<tr>
+<td>Browsecomp-zh</td>
+<td>49.5</td>
+<td>42.9</td>
+<td>--</td>
+<td>69.9</td>
+<td>62.1</td>
+<td>69.5</td>
+</tr>
+<tr>
+<td>WideSearch</td>
+<td>47.2</td>
+<td>40.4</td>
+<td>--</td>
+<td>60.5</td>
+<td>61.1</td>
+<td>57.1</td>
+</tr>
+<tr>
+<td>Seal-0</td>
+<td>34.2</td>
+<td>45.1</td>
+<td>--</td>
+<td>44.1</td>
+<td>47.2</td>
+<td>41.4</td>
+</tr>
+<tr class="group-row"><td colspan="7">Multilingualism</td></tr>
+<tr>
+<td>MMMLU</td>
+<td>86.2</td>
+<td>78.2</td>
+<td>83.4</td>
+<td>86.7</td>
+<td>85.9</td>
+<td>85.2</td>
+</tr>
+<tr>
+<td>MMLU-ProX</td>
+<td>78.5</td>
+<td>74.5</td>
+<td>77.9</td>
+<td>82.2</td>
+<td>82.2</td>
+<td>81.0</td>
+</tr>
+<tr>
+<td>NOVA-63</td>
+<td>51.9</td>
+<td>51.1</td>
+<td>55.4</td>
+<td>58.6</td>
+<td>58.1</td>
+<td>57.1</td>
+</tr>
+<tr>
+<td>INCLUDE</td>
+<td>81.8</td>
+<td>74.0</td>
+<td>81.0</td>
+<td>82.8</td>
+<td>81.6</td>
+<td>79.7</td>
+</tr>
+<tr>
+<td>Global PIQA</td>
+<td>88.5</td>
+<td>84.1</td>
+<td>85.7</td>
+<td>88.4</td>
+<td>87.5</td>
+<td>86.6</td>
+</tr>
+<tr>
+<td>PolyMATH</td>
+<td>67.3</td>
+<td>54.0</td>
+<td>60.1</td>
+<td>68.9</td>
+<td>71.2</td>
+<td>64.4</td>
+</tr>
+<tr>
+<td>WMT24++</td>
+<td>80.7</td>
+<td>74.4</td>
+<td>75.8</td>
+<td>78.3</td>
+<td>77.6</td>
+<td>76.3</td>
+</tr>
+<tr>
+<td>MAXIFE</td>
+<td>85.3</td>
+<td>83.7</td>
+<td>83.2</td>
+<td>87.9</td>
+<td>88.0</td>
+<td>86.6</td>
+</tr>
+</tbody>
+</table>
+<p class="note warn"><strong>Language 表脚注。</strong>HLE w/ tool、BrowseComp、WideSearch 等搜索任务依赖具体 agent harness。模型卡说明大多数搜索 Agent 使用 256K context folding；WideSearch 使用 256K 且不做 context management。空白或 <code>--</code> 表示未报告或不适用。</p>
+  </div></details>
+  <details class="demo appendix-table"><summary><span class="demo-index">A02</span><span class="demo-title">Vision-Language benchmark 完整表<span class="demo-sub">视觉推理、VQA、文档、空间、视频、视觉 Agent、工具与医疗 VQA。</span></span><span class="demo-toggle"></span></summary><div class="demo-body benchmark-wrap">
+<table class="facts benchmark-table">
+<thead><tr>
+<th></th>
+<th>GPT-5-mini 2025-08-07</th>
+<th>Claude-Sonnet-4.5</th>
+<th>Qwen3-VL-235B-A22B</th>
+<th>Qwen3.5-122B-A10B</th>
+<th>Qwen3.5-27B</th>
+<th>Qwen3.5-35B-A3B</th>
+</tr></thead>
+<tbody>
+<tr class="group-row"><td colspan="7">STEM and Puzzle</td></tr>
+<tr>
+<td>MMMU</td>
+<td>79.0</td>
+<td>79.6</td>
+<td>80.6</td>
+<td>83.9</td>
+<td>82.3</td>
+<td>81.4</td>
+</tr>
+<tr>
+<td>MMMU-Pro</td>
+<td>67.3</td>
+<td>68.4</td>
+<td>69.3</td>
+<td>76.9</td>
+<td>75.0</td>
+<td>75.1</td>
+</tr>
+<tr>
+<td>MathVision</td>
+<td>71.9</td>
+<td>71.1</td>
+<td>74.6</td>
+<td>86.2</td>
+<td>86.0</td>
+<td>83.9</td>
+</tr>
+<tr>
+<td>Mathvista(mini)</td>
+<td>79.1</td>
+<td>79.8</td>
+<td>85.8</td>
+<td>87.4</td>
+<td>87.8</td>
+<td>86.2</td>
+</tr>
+<tr>
+<td>DynaMath</td>
+<td>81.4</td>
+<td>78.8</td>
+<td>82.8</td>
+<td>85.9</td>
+<td>87.7</td>
+<td>85.0</td>
+</tr>
+<tr>
+<td>ZEROBench</td>
+<td>3</td>
+<td>4</td>
+<td>4</td>
+<td>9</td>
+<td>10</td>
+<td>8</td>
+</tr>
+<tr>
+<td>ZEROBench_sub</td>
+<td>27.3</td>
+<td>26.3</td>
+<td>28.4</td>
+<td>36.2</td>
+<td>36.2</td>
+<td>34.1</td>
+</tr>
+<tr>
+<td>VlmsAreBlind</td>
+<td>75.8</td>
+<td>85.5</td>
+<td>79.5</td>
+<td>96.7</td>
+<td>96.9</td>
+<td>97.0</td>
+</tr>
+<tr>
+<td>BabyVision</td>
+<td>20.9</td>
+<td>18.6</td>
+<td>22.2</td>
+<td>40.2 / 34.5</td>
+<td>44.6 / 34.8</td>
+<td>38.4 / 29.6</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">General VQA</td></tr>
+<tr>
+<td>RealWorldQA</td>
+<td>79.0</td>
+<td>70.3</td>
+<td>81.3</td>
+<td>85.1</td>
+<td>83.7</td>
+<td>84.1</td>
+</tr>
+<tr>
+<td>MMStar</td>
+<td>74.1</td>
+<td>73.8</td>
+<td>78.7</td>
+<td>82.9</td>
+<td>81.0</td>
+<td>81.9</td>
+</tr>
+<tr>
+<td>MMBench<sub><small>EN-DEV-v1.1</small></sub></td>
+<td>86.8</td>
+<td>88.3</td>
+<td>89.7</td>
+<td>92.8</td>
+<td>92.6</td>
+<td>91.5</td>
+</tr>
+<tr>
+<td>SimpleVQA</td>
+<td>56.8</td>
+<td>57.6</td>
+<td>61.3</td>
+<td>61.7</td>
+<td>56.0</td>
+<td>58.3</td>
+</tr>
+<tr>
+<td>HallusionBench</td>
+<td>63.2</td>
+<td>59.9</td>
+<td>66.7</td>
+<td>67.6</td>
+<td>70.0</td>
+<td>67.9</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Text Recognition and Document Understanding</td></tr>
+<tr>
+<td>OmniDocBench1.5</td>
+<td>77.0</td>
+<td>85.8</td>
+<td>84.5</td>
+<td>89.8</td>
+<td>88.9</td>
+<td>89.3</td>
+</tr>
+<tr>
+<td>CharXiv(RQ)</td>
+<td>68.6</td>
+<td>67.2</td>
+<td>66.1</td>
+<td>77.2</td>
+<td>79.5</td>
+<td>77.5</td>
+</tr>
+<tr>
+<td>MMLongBench-Doc</td>
+<td>50.3</td>
+<td>--</td>
+<td>56.2</td>
+<td>59.0</td>
+<td>60.2</td>
+<td>59.5</td>
+</tr>
+<tr>
+<td>CC-OCR</td>
+<td>70.8</td>
+<td>68.1</td>
+<td>81.5</td>
+<td>81.8</td>
+<td>81.0</td>
+<td>80.7</td>
+</tr>
+<tr>
+<td>AI2D_TEST</td>
+<td>88.2</td>
+<td>87.0</td>
+<td>89.2</td>
+<td>93.3</td>
+<td>92.9</td>
+<td>92.6</td>
+</tr>
+<tr>
+<td>OCRBench</td>
+<td>82.1</td>
+<td>76.6</td>
+<td>87.5</td>
+<td>92.1</td>
+<td>89.4</td>
+<td>91.0</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Spatial Intelligence</td></tr>
+<tr>
+<td>ERQA</td>
+<td>54.0</td>
+<td>45.0</td>
+<td>52.5</td>
+<td>62.0</td>
+<td>60.5</td>
+<td>64.8</td>
+</tr>
+<tr>
+<td>CountBench</td>
+<td>91.0</td>
+<td>90.0</td>
+<td>93.7</td>
+<td>97.0</td>
+<td>97.8</td>
+<td>97.8</td>
+</tr>
+<tr>
+<td>RefCOCO(avg)</td>
+<td>--</td>
+<td>--</td>
+<td>91.1</td>
+<td>91.3</td>
+<td>90.9</td>
+<td>89.2</td>
+</tr>
+<tr>
+<td>ODInW13</td>
+<td>--</td>
+<td>--</td>
+<td>43.2</td>
+<td>44.5</td>
+<td>41.1</td>
+<td>42.6</td>
+</tr>
+<tr>
+<td>EmbSpatialBench</td>
+<td>80.7</td>
+<td>71.8</td>
+<td>84.3</td>
+<td>83.9</td>
+<td>84.5</td>
+<td>83.1</td>
+</tr>
+<tr>
+<td>RefSpatialBench</td>
+<td>9.0</td>
+<td>2.2</td>
+<td>69.9</td>
+<td>69.3</td>
+<td>67.7</td>
+<td>63.5</td>
+</tr>
+<tr>
+<td>LingoQA</td>
+<td>62.4</td>
+<td>12.8</td>
+<td>66.8</td>
+<td>80.8</td>
+<td>82.0</td>
+<td>79.2</td>
+</tr>
+<tr>
+<td>Hypersim</td>
+<td>--</td>
+<td>--</td>
+<td>11.0</td>
+<td>12.7</td>
+<td>13.0</td>
+<td>13.1</td>
+</tr>
+<tr>
+<td>SUNRGBD</td>
+<td>--</td>
+<td>--</td>
+<td>34.9</td>
+<td>36.2</td>
+<td>35.4</td>
+<td>33.4</td>
+</tr>
+<tr>
+<td>Nuscene</td>
+<td>--</td>
+<td>--</td>
+<td>13.9</td>
+<td>15.4</td>
+<td>15.2</td>
+<td>14.6</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Video Understanding</td></tr>
+<tr>
+<td>VideoMME<sub><small>(w sub.)</small></sub></td>
+<td>83.5</td>
+<td>81.1</td>
+<td>83.8</td>
+<td>87.3</td>
+<td>87.0</td>
+<td>86.6</td>
+</tr>
+<tr>
+<td>VideoMME<sub><small>(w/o sub.)</small></sub></td>
+<td>78.9</td>
+<td>75.3</td>
+<td>79.0</td>
+<td>83.9</td>
+<td>82.8</td>
+<td>82.5</td>
+</tr>
+<tr>
+<td>VideoMMMU</td>
+<td>82.5</td>
+<td>77.6</td>
+<td>80.0</td>
+<td>82.0</td>
+<td>82.3</td>
+<td>80.4</td>
+</tr>
+<tr>
+<td>MLVU</td>
+<td>83.3</td>
+<td>72.8</td>
+<td>83.8</td>
+<td>87.3</td>
+<td>85.9</td>
+<td>85.6</td>
+</tr>
+<tr>
+<td>MVBench</td>
+<td>--</td>
+<td>--</td>
+<td>75.2</td>
+<td>76.6</td>
+<td>74.6</td>
+<td>74.8</td>
+</tr>
+<tr>
+<td>LVBench</td>
+<td>--</td>
+<td>--</td>
+<td>63.6</td>
+<td>74.4</td>
+<td>73.6</td>
+<td>71.4</td>
+</tr>
+<tr>
+<td>MMVU</td>
+<td>69.8</td>
+<td>70.6</td>
+<td>71.1</td>
+<td>74.7</td>
+<td>73.3</td>
+<td>72.3</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Visual Agent</td></tr>
+<tr>
+<td>ScreenSpot Pro</td>
+<td>--</td>
+<td>36.2</td>
+<td>62.0</td>
+<td>70.4</td>
+<td>70.3</td>
+<td>68.6</td>
+</tr>
+<tr>
+<td>OSWorld-Verified</td>
+<td>--</td>
+<td>61.4</td>
+<td>38.1</td>
+<td>58.0</td>
+<td>56.2</td>
+<td>54.5</td>
+</tr>
+<tr>
+<td>AndroidWorld</td>
+<td>--</td>
+<td>--</td>
+<td>63.7</td>
+<td>66.4</td>
+<td>64.2</td>
+<td>71.1</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Tool Calling</td></tr>
+<tr>
+<td>TIR-Bench</td>
+<td>24.6</td>
+<td>27.6</td>
+<td>29.8</td>
+<td>53.2 / 42.5</td>
+<td>59.8 / 42.3</td>
+<td>55.5 / 38.0</td>
+</tr>
+<tr>
+<td>V*</td>
+<td>71.7</td>
+<td>58.6</td>
+<td>85.9</td>
+<td>93.2 / 90.1</td>
+<td>93.7 / 89.0</td>
+<td>92.7 / 89.5</td>
+</tr>
+
+<tr class="group-row"><td colspan="7">Medical VQA</td></tr>
+<tr>
+<td>SLAKE</td>
+<td>70.5</td>
+<td>73.6</td>
+<td>54.7</td>
+<td>81.6</td>
+<td>80.0</td>
+<td>78.7</td>
+</tr>
+<tr>
+<td>PMC-VQA</td>
+<td>36.3</td>
+<td>55.9</td>
+<td>41.2</td>
+<td>63.3</td>
+<td>62.4</td>
+<td>62.0</td>
+</tr>
+<tr>
+<td>MedXpertQA-MM</td>
+<td>34.4</td>
+<td>54.0</td>
+<td>47.6</td>
+<td>67.3</td>
+<td>62.4</td>
+<td>61.4</td>
+</tr>
+</tbody>
+</table>
+<p class="note warn"><strong>Vision 表脚注。</strong>MathVision 对本模型使用固定逐步推理与 boxed 输出 prompt；BabyVision、TIR-Bench、V* 以“启用 Code Interpreter / 不启用”报告。空白或 <code>--</code> 表示未报告或不适用。</p>
+  </div></details>
+
+  <h3 id="sources">7.3 主要来源</h3>
+  <div class="sources">
+    <div class="source"><div><b><a href="Qwen3.5/Qwen3.5-35B-A3B/config.json">本地 config.json</a></b><p>40 层分配、hidden/head 维度、MoE、M-RoPE、上下文与 27 层 vision config。</p></div></div>
+    <div class="source"><div><b><a href="Qwen3.5/Qwen3.5-35B-A3B/model.safetensors.index.json">本地 model.safetensors.index.json</a></b><p>主干、vision merger、LM head 与独立 MTP 权重的 checkpoint 事实。</p></div></div>
+    <div class="source"><div><b><a href="Qwen3.5/Qwen3.5-35B-A3B/README.md">Qwen3.5-35B-A3B 官方模型卡</a></b><p>结构摘要、上下文、部署方式、完整 benchmark 与评测脚注。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/models/qwen3_5_moe/modular_qwen3_5_moe.py">Transformers · modular_qwen3_5_moe.py</a></b><p>MoE 配置、Qwen3.5 组件组合、decoder layer 与 HF MTP 加载边界。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/models/qwen3_5/modular_qwen3_5.py">Transformers · modular_qwen3_5.py</a></b><p>Gated DeltaNet、partial M-RoPE、vision forward、Early Fusion 与四路位置索引。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/models/qwen3_next/modular_qwen3_next.py">Transformers · modular_qwen3_next.py</a></b><p>GQA output gate、delta-rule fallback、cache 分支、MoE 与模型骨架的继承来源。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/models/qwen3_vl/modular_qwen3_vl.py">Transformers · modular_qwen3_vl.py</a></b><p>Vision Patch Embed、Patch Merger、Vision Block 和 VLM 基础接口。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/models/qwen3_vl_moe/modular_qwen3_vl_moe.py">Transformers · modular_qwen3_vl_moe.py</a></b><p>无 bias Top-k router 的 softmax、Top-8 与重归一化实现。</p></div></div>
+    <div class="source"><div><b><a href="https://qwen.ai/blog?id=qwen3.5">Qwen3.5: Towards Native Multimodal Agents</a></b><p>家族预训练、异构基础设施、FP8、异步 RL、多语言与效果叙事。</p></div></div>
+    <div class="source"><div><b><a href="https://qwen.ai/blog?id=e34c4305036ce60d55a0791b170337c2b70ae51d">Qwen3-Next 官方博客</a></b><p>3:1 混合架构、output gate、partial RoPE、稳定性设计与 MTP 的设计动机。</p></div></div>
+  </div>
+  <div class="footer">本报告区分“代码正在执行什么”“checkpoint 包含什么”“官方公开了什么”与“由结构推导出什么”。离线单文件生成于 2026-08-19。</div>
+</section>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+  const clamp = (x,a,b) => Math.min(b,Math.max(a,x));
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const timers = new Map();
+
+  // Theme and outline drawer
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem('qwen35-report-theme'); } catch (_) { /* file:// storage may be disabled */ }
+  const preferredDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = savedTheme || (preferredDark ? 'dark' : 'light');
+  $('themeBtn').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('qwen35-report-theme', next); } catch (_) { /* theme still works for this session */ }
+    $$('.demo[open]').forEach(d => initDemo(d.dataset.demo, true));
+  });
+  $('tocBtn').addEventListener('click', () => {
+    const open = $('toc').classList.toggle('hidden') === false;
+    document.body.classList.toggle('toc-open', open);
+    $('tocBtn').setAttribute('aria-expanded', String(open));
+  });
+
+  // Build a level-2/3 outline from the document itself.
+  const headings = $$('main section > h2, main section h3[id]');
+  const tocFrag = document.createDocumentFragment();
+  headings.forEach(h => {
+    const a = document.createElement('a');
+    if (!h.id) h.id = 'heading-' + Math.random().toString(36).slice(2);
+    a.href = '#' + h.id;
+    a.textContent = h.textContent.replace(/^\d{2}/,'').trim();
+    a.className = h.tagName === 'H3' ? 'level-3' : 'level-2';
+    tocFrag.appendChild(a);
+  });
+  $('tocLinks').appendChild(tocFrag);
+  const tocAnchors = $$('#tocLinks a');
+  const observer = new IntersectionObserver(entries => {
+    const visible = entries.filter(e => e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];
+    if (!visible) return;
+    tocAnchors.forEach(a => a.classList.toggle('active', a.hash === '#' + visible.target.id));
+  }, {rootMargin:'-10% 0px -72% 0px', threshold:[0,1]});
+  headings.forEach(h => observer.observe(h));
+  tocAnchors.forEach(a => a.addEventListener('click', () => {
+    if (innerWidth < 900) { $('toc').classList.add('hidden'); document.body.classList.remove('toc-open'); $('tocBtn').setAttribute('aria-expanded','false'); }
+  }));
+
+  // Demo lifecycle
+  $$('.demo[data-demo]').forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) initDemo(d.dataset.demo);
+    else stopTimer(d.dataset.demo);
+  }));
+  function stopTimer(name){ if(timers.has(name)){ clearInterval(timers.get(name)); timers.delete(name); } }
+  function runTimer(name, fn, ms=750){ stopTimer(name); timers.set(name,setInterval(fn,ms)); }
+  function initDemo(name, redraw=false){
+    ({fusion:initFusion,layers:initLayers,gdn:initGDN,gqa:initGQA,moe:initMoE,mtp:initMTP,mrope:initMRope,cache:initCache}[name]||(()=>{}))(redraw);
+  }
+  function bindOnce(el, type, fn){ if(!el || el.dataset['bound'+type]) return; el.addEventListener(type,fn); el.dataset['bound'+type]='1'; }
+  function action(name, fn){ const el=document.querySelector(`[data-action="${name}"]`); bindOnce(el,'click',fn); }
+
+  // D01 Early Fusion
+  let fusionStep=0;
+  function initFusion(){
+    ['fusionText','fusionVision'].forEach(id => bindOnce($(id),'input',()=>{fusionStep=0;drawFusion();}));
+    action('fusion-step',()=>{fusionStep=(fusionStep+1)%4;drawFusion();});
+    action('fusion-play',()=>runTimer('fusion',()=>{fusionStep=(fusionStep+1)%4;drawFusion();},850));
+    action('fusion-pause',()=>stopTimer('fusion'));
+    action('fusion-reset',()=>{stopTimer('fusion');fusionStep=0;drawFusion();}); drawFusion();
+  }
+  function drawFusion(){
+    const nt=+$('fusionText').value,nv=+$('fusionVision').value; $('fusionTextOut').value=nt;$('fusionVisionOut').value=nv;
+    const at=Math.min(2,nt-1), tokens=[];
+    for(let i=0;i<nt;i++){
+      if(i===at) for(let j=0;j<nv;j++) tokens.push({label:fusionStep<2?'[IMG]':`v${j}`,visual:fusionStep>=2,active:fusionStep===1||fusionStep===2});
+      else tokens.push({label:`t${i}`,visual:false,active:false});
+    }
+    $('fusionTokens').innerHTML=tokens.map(t=>`<span class="token ${t.visual?'visual':''} ${t.active?'active':''}">${t.label}</span>`).join('');
+    const captions=[`① processor 构造 ${nt} 个文本位置，并为媒体预留 ${nv} 个连续 placeholder。`,`② get_placeholder_mask 校验视觉特征数与 placeholder 数一致。`,`③ masked_scatter 原位写入 ${nv} 个视觉向量；序列长度保持 ${tokens.length}。`,`④ 统一序列以 [B, ${tokens.length}, 2048] 进入第 0 个语言层。`];
+    $('fusionCaption').textContent=captions[fusionStep];
+  }
+
+  // D02 layer schedule
+  function initLayers(){ bindOnce($('layerSlider'),'input',drawLayers); action('layer-prev',()=>{$('layerSlider').value=Math.max(0,+$('layerSlider').value-1);drawLayers();}); action('layer-next',()=>{$('layerSlider').value=Math.min(39,+$('layerSlider').value+1);drawLayers();}); action('layer-play',()=>runTimer('layers',()=>{$('layerSlider').value=(+$('layerSlider').value+1)%40;drawLayers();},500)); action('layer-pause',()=>stopTimer('layers')); action('layer-reset',()=>{stopTimer('layers');$('layerSlider').value=0;drawLayers();}); drawLayers(); }
+  function drawLayers(){ const n=+$('layerSlider').value;$('layerOut').value=n;$('layerStrip').innerHTML=Array.from({length:40},(_,i)=>`<button class="layer-cell ${(i+1)%4===0?'full':''} ${i===n?'selected':''}" data-layer="${i}" title="layer ${i}">${i}</button>`).join('');$$('[data-layer]',$('layerStrip')).forEach(b=>b.onclick=()=>{$('layerSlider').value=b.dataset.layer;drawLayers();});const full=(n+1)%4===0;$('layerCaption').innerHTML=`layer <b>${n}</b> · group ${Math.floor(n/4)+1}/10 · <b>${full?'Gated GQA':'Gated DeltaNet'}</b> → Sparse MoE · cache: ${full?'随序列增长的 K/V':'固定 recurrent matrix + conv state'}`; }
+
+  // D03 miniature delta-rule matrix
+  let gdnStep=0;
+  const S0=[[.35,-.10,.20],[.05,.40,-.15],[-.20,.10,.30]], k=[.8,.5,-.3], q=[.2,.9,.4];
+  function initGDN(){ ['gdnBeta','gdnDecay','gdnValue'].forEach(id=>bindOnce($(id),'input',()=>{gdnStep=0;drawGDN();}));action('gdn-step',()=>{gdnStep=(gdnStep+1)%5;drawGDN();});action('gdn-play',()=>runTimer('gdn',()=>{gdnStep=(gdnStep+1)%5;drawGDN();},900));action('gdn-pause',()=>stopTimer('gdn'));action('gdn-reset',()=>{stopTimer('gdn');gdnStep=0;drawGDN();});drawGDN(); }
+  function matHTML(M,hot=false){return `<span class="matrix" style="grid-template-columns:repeat(${M[0].length},40px)">${M.flatMap((r,i)=>r.map((v,j)=>`<span class="cell ${hot&&i===j?'hot':''}">${v.toFixed(2)}</span>`)).join('')}</span>`}
+  function drawGDN(){
+    const beta=+$('gdnBeta').value,decay=+$('gdnDecay').value,v=[$('gdnValue').valueAsNumber,-.6,.9];$('gdnBetaOut').value=beta.toFixed(2);$('gdnDecayOut').value=decay.toFixed(2);$('gdnValueOut').value=v[0].toFixed(1);
+    const Sd=S0.map(r=>r.map(x=>x*decay)); const pred=[0,1,2].map(j=>k.reduce((s,x,i)=>s+x*Sd[i][j],0)); const delta=v.map((x,j)=>(x-pred[j])*beta); const S=Sd.map((r,i)=>r.map((x,j)=>x+k[i]*delta[j])); const out=[0,1,2].map(j=>q.reduce((s,x,i)=>s+x*S[i][j],0));
+    const stages=[`初始状态 Sₜ₋₁ ${matHTML(S0,true)}`,`衰减：S̃=eᵍS ${matHTML(Sd,true)}`,`读取旧值：kᵀS̃ = [${pred.map(x=>x.toFixed(2)).join(', ')}]`,`修正：δ=β(v−v̂)=[${delta.map(x=>x.toFixed(2)).join(', ')}]<br>外积写入后 Sₜ ${matHTML(S,true)}`,`查询：o=Sₜᵀq=[${out.map(x=>x.toFixed(2)).join(', ')}] → gated RMSNorm(z) → out_proj`];
+    $('gdnViz').innerHTML=`<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><b style="font:700 12px var(--sans)">step ${gdnStep+1}/5</b>${stages[gdnStep]}</div><div class="step-caption">示例为单 head 的 3×3 缩小矩阵；真实状态为每个 value head 128×128，共 32 heads。</div>`;
+  }
+
+  // D04 GQA mapping
+  function initGQA(){ ['gqaMode','gqaGate','gqaRope'].forEach(id=>bindOnce($(id),'input',drawGQA));drawGQA(); }
+  function drawGQA(){ const mode=$('gqaMode').value,kv=mode==='mha'?16:mode==='mqa'?1:2,gate=+$('gqaGate').value,rope=+$('gqaRope').value;$('gqaGateOut').value=gate.toFixed(2);$('gqaRopeOut').value=Math.round(rope*100)+'%';$('gqaHeads').innerHTML=Array.from({length:16},(_,i)=>`<div class="qhead" data-kv="${kv===1?0:Math.floor(i/(16/kv))%2}">Q${i}<br><small>KV${Math.floor(i/(16/kv))}</small></div>`).join('');const elems=2*kv*256;$('gqaCaption').innerHTML=`${mode.toUpperCase()}：16 Q heads 共享 ${kv} KV head(s) · 每 token 每层 KV = <b>${elems.toLocaleString()}</b> elements · RoPE ${Math.round(rope*256)} / 256 dims · output×σ(gate) = ×${gate.toFixed(2)}`; }
+
+  // D05 deterministic router
+  function rng(seed){let x=seed|0;return()=>{x=(x*1664525+1013904223)|0;return((x>>>0)/4294967296)}}
+  function initMoE(){ ['moeSeed','moeTemp'].forEach(id=>bindOnce($(id),'input',drawMoE));action('moe-random',()=>{$('moeSeed').value=(+$('moeSeed').value*37+11)%99+1;drawMoE();});drawMoE(); }
+  function drawMoE(){ const seed=+$('moeSeed').value,temp=+$('moeTemp').value,r=rng(seed),logits=Array.from({length:256},()=>((r()-.5)*6)/temp),m=Math.max(...logits),ex=logits.map(Math.exp),sum=ex.reduce((a,b)=>a+b),p=ex.map(x=>x/sum),idx=Array.from({length:256},(_,i)=>i).sort((a,b)=>p[b]-p[a]).slice(0,8),z=idx.reduce((s,i)=>s+p[i],0);$('moeSeedOut').value=seed;$('moeTempOut').value=temp.toFixed(1);$('expertGrid').innerHTML=Array.from({length:256},(_,i)=>`<div class="expert ${idx.includes(i)?'selected':''}" title="E${i}: p=${p[i].toFixed(4)}">${i}</div>`).join('')+`<div class="expert shared" style="grid-column:span 16">shared expert · always active</div>`;$('moeCaption').innerHTML=`Top-8 = ${idx.map(i=>`E${i} ${(p[i]/z).toFixed(3)}`).join(' · ')}。八个 routed 权重重新归一化后和为 1；shared expert 另经 sigmoid gate 加入。`; }
+
+  // D06 speculative sequence
+  let mtpStep=0;
+  function initMTP(){ bindOnce($('mtpAccept'),'input',()=>{mtpStep=0;drawMTP();});action('mtp-step',()=>{mtpStep=(mtpStep+1)%5;drawMTP();});action('mtp-play',()=>runTimer('mtp',()=>{mtpStep=(mtpStep+1)%5;drawMTP();},900));action('mtp-pause',()=>stopTimer('mtp'));action('mtp-reset',()=>{stopTimer('mtp');mtpStep=0;drawMTP();});drawMTP(); }
+  function drawMTP(){const n=+$('mtpAccept').value;$('mtpAcceptOut').value=n;const draft=['A','B','C','D'],verified=draft.map((x,i)=>i<n?x:(i===n?'X':'·'));const rows=[['context','t₀','t₁'],['MTP draft',...draft],['main verify',...verified],['commit',...draft.slice(0,n),n<4?'X':'✓']];const shown=Math.min(mtpStep+1,rows.length);$('mtpViz').innerHTML=rows.slice(0,shown).map((r,ri)=>`<div class="token-row" style="margin:7px 0"><b style="width:90px;font:11px var(--sans)">${r[0]}</b>${r.slice(1).map((x,i)=>`<span class="token ${ri===3&&i<n?'visual':''}">${x}</span>`).join('')}</div>`).join('')+`<div class="step-caption">${['① 主模型产出当前 token 与 hidden state。','② MTP 连续提出 4 个候选 token。','③ 主模型一次前向并行计算候选位置的真实分布。','④ 接受最长一致前缀；首个不一致位置采用主模型 token。','⑤ 从新提交的末尾继续下一轮，主模型分布保持最终正确性。'][mtpStep]}</div>`; }
+
+  // Canvas helpers
+  function setupCanvas(c){const rect=c.getBoundingClientRect(),dpr=devicePixelRatio||1;c.width=Math.max(300,rect.width*dpr);c.height=260*dpr;const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return{x,w:rect.width,h:260};}
+  function initMRope(){ ['ropeT','ropeH','ropeW','ropeText'].forEach(id=>bindOnce($(id),'input',drawMRope));drawMRope(); }
+  function drawMRope(){const vals=[$('ropeT').valueAsNumber,$('ropeH').valueAsNumber,$('ropeW').valueAsNumber],isText=$('ropeText').checked;if(isText)vals[1]=vals[2]=vals[0];['T','H','W'].forEach((axis,i)=>$("rope"+axis+"Out").value=vals[i]);const {x,w,h}=setupCanvas($('ropeCanvas'));x.clearRect(0,0,w,h);x.fillStyle=css('--muted');x.font='12px '+css('--sans');x.fillText(isText?'纯文本：三轴使用相同序列位置':'视觉 token：时间 / 高度 / 宽度独立取值',18,22);const colors=[css('--accent'),css('--blue'),css('--gold')],names=['temporal · 11 pairs','height · 11 pairs','width · 10 pairs'];vals.forEach((p,i)=>{const cy=72+i*70,r=24,angle=(p*(i+1)*.32)%(Math.PI*2);x.strokeStyle=colors[i];x.lineWidth=2;x.beginPath();x.arc(70,cy,r,0,Math.PI*2);x.stroke();x.beginPath();x.moveTo(70,cy);x.lineTo(70+Math.cos(angle)*r,cy-Math.sin(angle)*r);x.stroke();x.fillStyle=colors[i];x.fillText(`${names[i]} · p=${p} · phase=${angle.toFixed(2)} rad`,115,cy+4);const start=350,span=Math.max(220,w-390);for(let j=0;j<(i===2?10:11);j++){const a=(p*Math.pow(1e7,-2*j/64))%(Math.PI*2);x.globalAlpha=.3+Math.abs(Math.cos(a))*.7;x.fillStyle=colors[i];x.fillRect(start+j*span/11,cy-9,Math.max(4,span/12),18);x.globalAlpha=1;}});}
+
+  // D08 theoretical cache plot
+  function initCache(){ ['cacheLen','cacheDtype'].forEach(id=>bindOnce($(id),'input',drawCache));drawCache(); }
+  function drawCache(){const L=$('cacheLen').valueAsNumber,bytes=+$('cacheDtype').value;$('cacheLenOut').value=L>=1024?Math.round(L/1024)+'K':L;const {x,w,h}=setupCanvas($('cacheCanvas')),pad={l:58,r:20,t:25,b:42},pw=w-pad.l-pad.r,ph=h-pad.t-pad.b,maxL=262144,gdnState=32*128*128+4*8192;const full=l=>40*l*1024*bytes,hybrid=l=>(10*l*1024+30*gdnState)*bytes,recur=()=>40*gdnState*bytes,max=full(maxL);x.clearRect(0,0,w,h);x.strokeStyle=css('--line-strong');x.beginPath();x.moveTo(pad.l,pad.t);x.lineTo(pad.l,h-pad.b);x.lineTo(w-pad.r,h-pad.b);x.stroke();const curves=[[full,css('--red'),'40-layer GQA'],[hybrid,css('--accent'),'Qwen3.5 hybrid'],[recur,css('--blue'),'40-layer recurrent']];curves.forEach(([fn,c,name],ci)=>{x.strokeStyle=c;x.lineWidth=2;x.beginPath();for(let i=0;i<=100;i++){const l=maxL*i/100,px=pad.l+pw*i/100,py=pad.t+ph*(1-fn(l)/max);i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.fillStyle=c;x.font='11px '+css('--sans');x.fillText(name,w-165,18+ci*16);});const px=pad.l+pw*L/maxL;x.setLineDash([4,3]);x.strokeStyle=css('--muted');x.beginPath();x.moveTo(px,pad.t);x.lineTo(px,h-pad.b);x.stroke();x.setLineDash([]);x.fillStyle=css('--muted');x.font='10px '+css('--sans');x.fillText('0',pad.l-4,h-pad.b+18);x.fillText('262K',w-pad.r-28,h-pad.b+18);const fmt=n=>(n/1024/1024/1024).toFixed(2)+' GiB';$('cacheCaption').innerHTML=`batch=1、仅计缓存元素的理论估算：全 40 层 GQA <b>${fmt(full(L))}</b>；本模型 hybrid <b>${fmt(hybrid(L))}</b>；纯递归 <b>${fmt(recur(L))}</b>。未计 allocator、对齐、视觉 token 与运行时 workspace。`; }
+
+  addEventListener('resize',()=>$$('.demo[open]').forEach(d=>{if(['mrope','cache'].includes(d.dataset.demo))initDemo(d.dataset.demo,true)}));
+})();
+</script>
+</main>
+</body>
+</html>
