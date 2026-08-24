@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="基于 Transformers Qwen3.5-9B 源码的 M-RoPE 算法与交互式代码解读">
+<title>Qwen3.5 M‑RoPE · 从像素网格到旋转相位</title>
+<style>
+:root{--bg:#071017;--panel:#0d1821;--panel2:#111f29;--ink:#e9f2f5;--muted:#92a7b2;--line:#233541;--cyan:#38d9c5;--blue:#62a6ff;--amber:#ffbf69;--pink:#ff719a;--green:#7ae582;--shadow:0 22px 70px #0007;--code:#081219;--nav:rgba(7,16,23,.86)}
+[data-theme="light"]{--bg:#f5f7f8;--panel:#fff;--panel2:#edf3f5;--ink:#12212a;--muted:#5f737d;--line:#d5e0e5;--cyan:#008f80;--blue:#1769c2;--amber:#b56600;--pink:#c72e61;--green:#188647;--shadow:0 22px 70px #20344018;--code:#f0f4f6;--nav:rgba(245,247,248,.88)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,"SF Pro Display","Noto Sans CJK SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;line-height:1.72}body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 76% 5%,#1d7e8a26,transparent 30%),radial-gradient(circle at 15% 42%,#20498922,transparent 28%);z-index:-1}a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}code,pre{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}code{font-size:.9em;background:var(--code);border:1px solid var(--line);border-radius:5px;padding:.12em .36em}button,input,select{font:inherit}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.top{position:fixed;z-index:20;top:0;left:0;right:0;height:58px;display:flex;align-items:center;gap:18px;padding:0 28px;background:var(--nav);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}.brand{font-weight:800;letter-spacing:.04em;white-space:nowrap}.brand i{color:var(--cyan);font-style:normal}.top nav{display:flex;gap:18px;margin-left:auto}.top nav a{color:var(--muted);font-size:13px}.icon-btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer}.icon-btn:hover{border-color:var(--cyan)}
+main{width:min(1160px,calc(100% - 40px));margin:auto;padding:110px 0 90px}.hero{min-height:72vh;display:grid;grid-template-columns:1.15fr .85fr;gap:52px;align-items:center}.eyebrow{color:var(--cyan);font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}.hero h1{font-size:clamp(46px,7vw,86px);line-height:.98;letter-spacing:-.055em;margin:18px 0 24px}.hero h1 span{display:block;color:transparent;-webkit-text-stroke:1px var(--cyan)}.lede{font-size:18px;color:var(--muted);max-width:680px}.badges{display:flex;flex-wrap:wrap;gap:9px;margin-top:28px}.badge{padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--muted)}.badge b{color:var(--ink)}
+.orbit{aspect-ratio:1;position:relative;display:grid;place-items:center}.orbit:before,.orbit:after{content:"";position:absolute;border:1px solid var(--line);border-radius:50%;inset:8%;animation:spin 26s linear infinite}.orbit:after{inset:22%;border-style:dashed;animation-direction:reverse;animation-duration:18s}.core{width:145px;height:145px;border-radius:50%;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 35% 28%,#49e7d4,#087a83 55%,#063340);box-shadow:0 0 80px #38d9c54c;color:white;font-weight:900;font-size:26px;line-height:1.05}.sat{position:absolute;padding:9px 13px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);font:700 12px/1.2 monospace}.sat.t{top:10%;left:5%;color:var(--amber)}.sat.h{right:0;top:36%;color:var(--cyan)}.sat.w{bottom:12%;left:12%;color:var(--pink)}.sat.p{right:12%;bottom:3%;color:var(--blue)}@keyframes spin{to{transform:rotate(360deg)}}
+section{padding-top:86px;scroll-margin-top:78px}.section-head{display:grid;grid-template-columns:90px 1fr;gap:24px;align-items:start;margin-bottom:32px}.num{font:800 54px/1 monospace;color:var(--line)}h2{font-size:clamp(30px,4vw,48px);line-height:1.1;letter-spacing:-.035em;margin:0 0 10px}.section-head p{margin:0;color:var(--muted);max-width:760px}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}.card{grid-column:span 4;background:linear-gradient(145deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 8px 35px #0002}.card h3{margin:0 0 8px;font-size:17px}.card p{margin:0;color:var(--muted);font-size:14px}.wide{grid-column:span 8}.full{grid-column:1/-1}.accent{border-top:3px solid var(--cyan)}.metric{font:850 36px/1.2 monospace;color:var(--cyan);margin:12px 0 4px}.label{font-size:12px;color:var(--muted)}
+.flow{display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:8px 0}.flow-step{min-width:150px;flex:1;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel2)}.flow-step b{display:block;font-size:13px;margin-bottom:4px}.flow-step span{font:12px monospace;color:var(--muted)}.arrow{display:grid;place-items:center;color:var(--cyan);font-size:20px}
+.callout{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 8%,var(--panel));padding:15px 18px;border-radius:0 10px 10px 0;color:var(--muted);font-size:14px}.callout strong{color:var(--ink)}.formula{padding:22px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:var(--code);overflow:auto;font:16px/2 monospace}.formula .t{color:var(--amber)}.formula .h{color:var(--cyan)}.formula .w{color:var(--pink)}
+.demo{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:var(--shadow)}.demo-head{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:20px 24px;border-bottom:1px solid var(--line)}.demo-head h3{margin:0}.demo-head small{color:var(--muted)}.controls{display:flex;flex-wrap:wrap;gap:13px;padding:18px 24px;background:var(--panel2);border-bottom:1px solid var(--line)}.control{min-width:145px;flex:1}.control label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px}.control output{color:var(--ink);font-family:monospace}.control input[type=range]{width:100%;accent-color:var(--cyan)}.control select{width:100%;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:6px}.demo-body{padding:24px}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}.stat{padding:12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line)}.stat b{display:block;font:800 18px monospace}.stat span{font-size:11px;color:var(--muted)}canvas{width:100%;display:block;border:1px solid var(--line);border-radius:12px;background:var(--code)}.caption{font-size:13px;color:var(--muted);margin:14px 0 0}.legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;font-size:12px;color:var(--muted)}.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.dot.t{background:var(--amber)}.dot.h{background:var(--cyan)}.dot.w{background:var(--pink)}
+.axis-strip{display:grid;grid-template-columns:repeat(32,1fr);gap:3px;margin:17px 0}.axis-cell{height:46px;border-radius:5px;display:grid;place-items:center;font:700 10px monospace;color:#071017;cursor:pointer;transition:.16s}.axis-cell:hover,.axis-cell.on{transform:translateY(-4px);box-shadow:0 5px 16px #0005}.axis-cell.t{background:var(--amber)}.axis-cell.h{background:var(--cyan)}.axis-cell.w{background:var(--pink)}.pair-readout{display:grid;grid-template-columns:1fr 1fr;gap:18px}.phase-dial{min-height:230px;display:grid;place-items:center;position:relative}.dial{width:180px;height:180px;border:1px solid var(--line);border-radius:50%;position:relative;background:repeating-radial-gradient(circle,var(--line) 0 1px,transparent 1px 30px)}.hand{position:absolute;left:50%;top:50%;width:72px;height:3px;transform-origin:0 50%;background:var(--cyan);border-radius:4px;transition:transform .2s}.hand:after{content:"";position:absolute;right:-5px;top:-4px;width:11px;height:11px;border-radius:50%;background:inherit}.dial:after{content:"";position:absolute;width:9px;height:9px;background:var(--ink);border-radius:50%;left:calc(50% - 4px);top:calc(50% - 4px)}.readout{align-self:center}.readout dl{display:grid;grid-template-columns:140px 1fr;margin:0}.readout dt,.readout dd{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.readout dt{color:var(--muted)}.readout dd{margin:0;font-family:monospace;text-align:right}
+.code-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.code-card{border:1px solid var(--line);border-radius:12px;overflow:hidden}.code-title{padding:9px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);background:var(--panel2)}pre{margin:0;padding:17px;overflow:auto;background:var(--code);font-size:12px;line-height:1.65;color:var(--muted)}pre .k{color:var(--pink)}pre .f{color:var(--blue)}pre .n{color:var(--amber)}pre .c{color:#66808d}.line-hi{display:inline-block;width:100%;background:#38d9c512;color:var(--ink)}
+table{display:block;width:100%;overflow-x:auto;border-collapse:collapse;font-size:14px}thead,tbody{display:table;width:100%;min-width:720px;table-layout:fixed}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}td:first-child{font-family:monospace;color:var(--cyan)}
+.sources{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.source{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--panel)}.source b{font-size:13px}.source p{font-size:12px;color:var(--muted);margin:7px 0 0}.footer{padding-top:80px;text-align:center;color:var(--muted);font-size:12px}
+@media(max-width:800px){.top nav{display:none}.top{padding:0 16px}.hero{grid-template-columns:1fr;min-height:auto}.orbit{max-width:430px;margin:auto;width:100%}.section-head{grid-template-columns:1fr}.num{font-size:30px}.card,.wide{grid-column:1/-1}.stats{grid-template-columns:repeat(2,1fr)}.stats .stat:last-child{grid-column:1/-1}.pair-readout,.code-grid,.sources{grid-template-columns:1fr}.axis-strip{gap:2px;overflow-x:auto;grid-template-columns:repeat(32,24px);padding:5px 2px 10px}.flow{display:grid;grid-template-columns:1fr;overflow:visible}.flow-step{min-width:0}.flow .arrow{height:14px;transform:rotate(90deg)}main{width:min(100% - 24px,1160px)}.demo-body{padding:14px}.controls{padding:14px}.hero h1{font-size:50px}thead,tbody{min-width:660px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.orbit:before,.orbit:after{animation:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand"><i>M</i>‑RoPE / Qwen3.5</div><nav><a href="#map">总览</a><a href="#index">位置编号</a><a href="#frequency">频率交错</a><a href="#rotation">旋转</a><a href="#code">代码</a></nav><button class="icon-btn" id="themeBtn" aria-label="切换明暗主题">☼ / ◐</button></header>
+<main>
+<header class="hero">
+  <div><div class="eyebrow">Source-grounded · Interactive report</div><h1>从像素网格<span>到旋转相位</span></h1><p class="lede">Qwen3.5 的 M‑RoPE 不是“给图片一个位置”，而是把统一序列中的视觉 token 同时放进时间、高度、宽度三套坐标系，再让不同频率对读取不同坐标。拖动参数，亲手走完这条计算链。</p><div class="badges"><span class="badge"><b>9B</b> checkpoint</span><span class="badge"><b>3</b> position axes</span><span class="badge"><b>32</b> rotary pairs</span><span class="badge"><b>11 / 11 / 10</b> T·H·W</span><span class="badge"><b>25%</b> partial RoPE</span></div></div>
+  <div class="orbit" aria-hidden="true"><div class="core">M<br>RoPE</div><div class="sat t">T · temporal</div><div class="sat h">H · height</div><div class="sat w">W · width</div><div class="sat p">θ = 10⁷</div></div>
+</header>
+
+<section id="map"><div class="section-head"><div class="num">01</div><div><h2>先建立一张正确的地图</h2><p>同一个“RoPE”名字下面有两条路径。本文聚焦语言模型全注意力层里的 M‑RoPE；视觉塔内部的二维 RoPE 是更早的一层编码。</p></div></div>
+<div class="grid">
+  <article class="card accent"><h3>视觉塔内部</h3><div class="metric">2D</div><p>ViT patch 使用高、宽位置生成自己的旋转嵌入，帮助视觉编码器理解局部空间。它发生在视觉特征送入 LLM 之前。</p></article>
+  <article class="card accent"><h3>统一序列内部</h3><div class="metric">3D</div><p>图像/视频特征替换占位 token 后，LLM 为每个 token 准备 T/H/W 三路坐标；文本 token 的三路值相同。</p></article>
+  <article class="card accent"><h3>真正执行旋转</h3><div class="metric">25%</div><p>只有 GQA 全注意力层的 Q/K 前 64 维进入 RoPE；其余 192 维直通。线性注意力层不走这段 Q/K RoPE。</p></article>
+  <article class="card full"><h3>端到端数据流</h3><div class="flow"><div class="flow-step"><b>① 原始图像</b><span>H × W pixels</span></div><div class="arrow">→</div><div class="flow-step"><b>② 16×16 patch</b><span>grid_thw</span></div><div class="arrow">→</div><div class="flow-step"><b>③ 2×2 merge</b><span>LLM visual tokens</span></div><div class="arrow">→</div><div class="flow-step"><b>④ 三轴 position_ids</b><span>[3, B, S]</span></div><div class="arrow">→</div><div class="flow-step"><b>⑤ 频率交错</b><span>[T,H,W] × inv_freq</span></div><div class="arrow">→</div><div class="flow-step"><b>⑥ Q/K 旋转</b><span>64 rotate + 192 pass</span></div></div></article>
+  <aside class="card full"><h3>一句话心智模型</h3><p>RoPE 用相位差表达相对位置；M‑RoPE 只改变“每个频率对该读取哪一条位置轴”，旋转公式本身没有变。</p></aside>
+</div>
+</section>
+
+<section id="index"><div class="section-head"><div class="num">02</div><div><h2>图片为何没有“吃掉”那么多位置</h2><p>视觉 token 在序列维仍然逐个存在，但位置编号沿二维网格展开：一个 H′×W′ 的图像占用的最大位置跨度是 max(H′,W′)，不是 H′×W′。</p></div></div>
+<div class="demo">
+  <div class="demo-head"><div><h3>实验 A · 从图片大小到三轴坐标</h3><small>尺寸按 32 像素对齐：16×16 patch，再做 2×2 spatial merge</small></div><button class="icon-btn" id="squarePreset">方图预设</button></div>
+  <div class="controls">
+    <div class="control"><label>对齐后宽度 <output id="imgWOut"></output></label><input id="imgW" type="range" min="128" max="2048" step="32" value="384"></div>
+    <div class="control"><label>对齐后高度 <output id="imgHOut"></output></label><input id="imgH" type="range" min="128" max="2048" step="32" value="256"></div>
+    <div class="control"><label>图前文本 token <output id="preOut"></output></label><input id="pre" type="range" min="1" max="24" value="5"></div>
+    <div class="control"><label>图后文本 token <output id="postOut"></output></label><input id="post" type="range" min="1" max="24" value="6"></div>
+    <div class="control"><label>观察坐标轴</label><select id="viewAxis"><option value="all">T / H / W 叠加</option><option value="t">只看 T</option><option value="h">只看 H</option><option value="w">只看 W</option></select></div>
+  </div>
+  <div class="demo-body"><div class="stats"><div class="stat"><b id="patchGrid">—</b><span>ViT patch 网格 H×W</span></div><div class="stat"><b id="llmGrid">—</b><span>LLM 图像网格 H′×W′</span></div><div class="stat"><b id="visionTokens">—</b><span>视觉 token 数</span></div><div class="stat"><b id="positionSpan">—</b><span>图像位置跨度</span></div><div class="stat"><b id="ropeDelta">—</b><span>rope_delta</span></div></div><canvas id="gridCanvas" width="1080" height="430" aria-label="图片三轴 M-RoPE 坐标交互图"></canvas><div class="legend"><span><i class="dot t"></i>T 时间</span><span><i class="dot h"></i>H 高度</span><span><i class="dot w"></i>W 宽度</span></div><p class="caption" id="gridCaption"></p></div>
+</div>
+<div class="grid" style="margin-top:18px"><div class="card wide"><h3>位置构造规则</h3><div class="formula">text: <span class="t">T</span>=<span class="h">H</span>=<span class="w">W</span>=p &nbsp; | &nbsp; image: (<span class="t">start+t</span>, <span class="h">start+h</span>, <span class="w">start+w</span>)</div><p style="margin-top:12px">静态图片的 T 网格为 1，所以所有图像 token 的 T 相同；H、W 则保留二维邻接。代码在图像结束后执行 <code>current_pos += max(grid_h, grid_w) / merge</code>，让后续文本接在三个轴的最大值之后。</p></div><aside class="card"><h3><code>rope_delta</code> 的作用</h3><p><code>delta = max(position_ids)+1−input_length</code>。二维网格把大量视觉 token 压进较短的位置跨度，因此 delta 常为负；增量生成时用它把普通序列计数校正到 M‑RoPE 坐标末端。</p></aside></div>
+</section>
+
+<section id="frequency"><div class="section-head"><div class="num">03</div><div><h2>32 个频率对，如何分给三条轴</h2><p>9B 每头 256 维，但 <code>partial_rotary_factor=0.25</code>，所以 rotary_dim=64，即 32 个二维旋转对。实现不是连续切成 TTT…HHH…WWW，而是交错成 THWTHW…TH。</p></div></div>
+<div class="demo">
+  <div class="demo-head"><div><h3>实验 B · 频率交错与相位</h3><small>点击任一色块，观察该频率对实际读取哪条坐标</small></div><button class="icon-btn" id="textToggle">切换为纯文本位置</button></div>
+  <div class="controls"><div class="control"><label>T 坐标 <output id="tOut"></output></label><input id="tPos" type="range" min="0" max="128" value="12"></div><div class="control"><label>H 坐标 <output id="hOut"></output></label><input id="hPos" type="range" min="0" max="128" value="36"></div><div class="control"><label>W 坐标 <output id="wOut"></output></label><input id="wPos" type="range" min="0" max="128" value="74"></div><div class="control"><label>频率对 i <output id="pairOut"></output></label><input id="pair" type="range" min="0" max="31" value="8"></div></div>
+  <div class="demo-body"><div class="legend"><span><i class="dot t"></i>T · 11 对</span><span><i class="dot h"></i>H · 11 对</span><span><i class="dot w"></i>W · 10 对</span></div><div id="axisStrip" class="axis-strip" aria-label="32 个交错频率对"></div><div class="pair-readout"><div class="phase-dial"><div class="dial"><div class="hand" id="phaseHand"></div></div></div><div class="readout"><dl><dt>pair index</dt><dd id="rPair">—</dd><dt>读取轴</dt><dd id="rAxis">—</dd><dt>position p</dt><dd id="rPos">—</dd><dt>inv_freq</dt><dd id="rFreq">—</dd><dt>原始角度 p·ω</dt><dd id="rRaw">—</dd><dt>圆周内相位</dt><dd id="rPhase">—</dd></dl></div></div><canvas id="phaseCanvas" width="1080" height="260" aria-label="M-RoPE 各频率对相位图"></canvas><p class="caption">越靠后的频率对，<code>inv_freq = θ<sup>−2i/64</sup></code> 越小，转动越慢，承载更长尺度的位置关系。交错布局让 T/H/W 都能覆盖高、中、低频，而不是某一轴被固定在单一频段。</p></div>
+</div>
+<div class="callout" style="margin-top:18px"><strong>一个关键细节：</strong>源码先把结果初始化为全部读取 T，然后把索引 <code>1,4,…,31</code> 替换为 H，把 <code>2,5,…,29</code> 替换为 W。因此实际顺序恰好是 <code>[T,H,W] × 10 + [T,H]</code>。<code>mrope_section=[11,11,10]</code> 描述的是每轴数量。</div>
+</section>
+
+<section id="rotation"><div class="section-head"><div class="num">04</div><div><h2>M 只改相位来源，RoPE 公式照旧</h2><p>每一对 Q/K 分量仍做标准二维旋转。注意 Transformers 此实现将 64 维分成前后两半配对，<code>rotate_half([x₁,x₂])=[−x₂,x₁]</code>；“频率对”是概念配对，不是内存中相邻的两个标量。</p></div></div>
+<div class="grid"><article class="card wide"><h3>第 i 对的计算</h3><div class="formula">ωᵢ = θ<sup>−2i/64</sup><br>φᵢ = p<sub>axis(i)</sub> · ωᵢ<br>q′ = q·cos φᵢ + rotate_half(q)·sin φᵢ</div></article><article class="card"><h3>为什么相对位置仍成立</h3><p>同轴两个 token 的内积依赖相位差 <code>(p₁−p₂)ωᵢ</code>。图像中同行 token 的 H 相位相同、同列 token 的 W 相位相同；文本三轴相等，退化回普通 1D RoPE。</p></article><article class="card"><h3>Partial RoPE</h3><div class="metric">64 + 192</div><p>Q/K 的前 64 维旋转，后 192 维保持原值。既注入显式位置，也保留大部分无旋转通道。</p></article><article class="card"><h3>作用层数</h3><div class="metric">8 / 32</div><p>9B 配置每 4 层一个 full attention，共 8 层 GQA 使用这段 M‑RoPE；其余 24 层是 Gated DeltaNet。</p></article><article class="card"><h3>频率底数</h3><div class="metric">10⁷</div><p>更大的 <code>rope_theta</code> 让低频转得更慢。模型声明最大位置长度 262,144，但支持长度不只由这一参数单独决定。</p></article></div>
+</section>
+
+<section id="code"><div class="section-head"><div class="num">05</div><div><h2>把数学逐行对回源码</h2><p>以下为核心逻辑的等价摘录；链接指向本地 Transformers 实现。Qwen3.5 存在 modular 源文件，正式修改应改 <code>modular_qwen3_5.py</code>，而不是生成的 modeling 文件。</p></div></div>
+<div class="code-grid">
+<div class="code-card"><div class="code-title">① 生成视觉三轴坐标 · get_vision_position_ids</div><pre><span class="n">H′</span> = grid_h // spatial_merge_size
+<span class="n">W′</span> = grid_w // spatial_merge_size
+
+t = arange(T′) * time_interval
+h = arange(H′) + start_position
+w = arange(W′) + start_position
+
+T, H, W = meshgrid(t, h, w)
+positions = stack([T, H, W]).reshape(<span class="n">3</span>, -1)
+<span class="line-hi">positions[0] += start_position</span></pre></div>
+<div class="code-card"><div class="code-title">② 拼接文本 / 视觉段 · get_rope_index</div><pre><span class="k">if</span> modality == TEXT:
+    pos = arange(text_len).expand(<span class="n">3</span>, -1) + current
+    current += text_len
+<span class="k">else</span>:
+    pos = <span class="f">get_vision_position_ids</span>(current, grid)
+    <span class="line-hi">current += max(grid_h, grid_w) // merge</span>
+
+delta = positions.max() + <span class="n">1</span> - input_length</pre></div>
+<div class="code-card"><div class="code-title">③ 三轴频率矩阵与交错</div><pre>freqs = inv_freq[..., None] @ position_ids[..., None, :]
+freqs_t = freqs[<span class="n">0</span>]              <span class="c"># 初始全 T</span>
+
+<span class="k">for</span> dim, offset <span class="k">in</span> [(<span class="n">1</span>,<span class="n">1</span>), (<span class="n">2</span>,<span class="n">2</span>)]:
+    length = mrope_section[dim] * <span class="n">3</span>
+    idx = slice(offset, length, <span class="n">3</span>)
+    <span class="line-hi">freqs_t[..., idx] = freqs[dim, ..., idx]</span>
+
+emb = cat((freqs_t, freqs_t), dim=-<span class="n">1</span>)</pre></div>
+<div class="code-card"><div class="code-title">④ 只旋转 Q/K 前 rotary_dim</div><pre>rotary_dim = cos.shape[-<span class="n">1</span>]  <span class="c"># 64</span>
+q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+q_rot = q_rot * cos + <span class="f">rotate_half</span>(q_rot) * sin
+k_rot = k_rot * cos + <span class="f">rotate_half</span>(k_rot) * sin
+<span class="line-hi">q = cat([q_rot, q_pass], dim=-1)</span>
+<span class="line-hi">k = cat([k_rot, k_pass], dim=-1)</span></pre></div>
+</div>
+<div class="callout" style="margin-top:18px"><strong>四路输入的边界：</strong>生成准备阶段可以把 position_ids 拼成 <code>[4,B,S]</code>：第 0 路供线性注意力使用，后 3 路才是全注意力 M‑RoPE 的 T/H/W；普通多模态 forward 也可能只传后三路。进入 <code>Qwen3_5TextRotaryEmbedding</code> 的始终是三路。因此“三轴 M‑RoPE”和代码中偶尔出现的“四路 position ids”并不矛盾。</div>
+</section>
+
+<section id="edge"><div class="section-head"><div class="num">06</div><div><h2>序列长度、图片大小与生成阶段</h2><p>三个量要分开：token 数决定注意力/缓存规模；位置最大值决定 RoPE 相位范围；像素尺寸先决定视觉网格，再间接改变前两者。</p></div></div>
+<table><thead><tr><th>变化</th><th>视觉 token 数</th><th>位置跨度</th><th>直接后果</th></tr></thead><tbody><tr><td>宽高同时 ×2</td><td>约 ×4</td><td>约 ×2</td><td>序列计算增长快于最大 M‑RoPE 坐标</td></tr><tr><td>只加图前文本</td><td>不变</td><td>整体起点后移</td><td>图像三个轴都加同一 start_position</td></tr><tr><td>长宽比增大</td><td>取决于面积</td><td>由更长边主导</td><td><code>max(H′,W′)</code> 决定图像后的 current_pos</td></tr><tr><td>纯文本输入</td><td>0</td><td>等于文本长度</td><td>T=H=W，严格退化为 1D RoPE</td></tr><tr><td>继续生成</td><td>每步 +1</td><td>每步 +1</td><td>三轴重新同步，用缓存的 rope_delta 校准起点</td></tr><tr><td>视频输入</td><td>T′H′W′</td><td>T 轴按帧/时间推进</td><td>Qwen3.5 用时间戳分隔视频片段，并把 video grid 拆开处理</td></tr></tbody></table>
+<div class="grid" style="margin-top:18px"><aside class="card"><h3>不要把跨度当 token 数</h3><p>例如 8×12 的 LLM 图像网格有 96 个 token，却只把位置游标推进 12。两者分别服务于计算量与几何坐标。</p></aside><aside class="card"><h3>不要把 M‑RoPE 当 resize</h3><p>resize、patchify、merge 决定网格；M‑RoPE 接收既成的 <code>grid_thw</code> 并编号，本身不改变图像或 token 数。</p></aside><aside class="card"><h3>不要把 theta 当长度开关</h3><p><code>theta=10⁷</code> 规定频率谱。可用上下文还取决于训练、配置、缓存与推理框架。</p></aside></div>
+</section>
+
+<section id="sources"><div class="section-head"><div class="num">07</div><div><h2>证据与阅读路径</h2><p>报告只对本地 checkpoint 配置与当前仓库实现作确定性陈述；算法动机部分是对代码行为的工程解释。</p></div></div><div class="sources"><div class="source"><b><a href="Qwen3.5/Qwen3.5-9B/config.json">Qwen3.5‑9B · config.json</a></b><p>head_dim、层类型、rope_theta、partial_rotary_factor、mrope_section、vision patch/merge 参数。</p></div><div class="source"><b><a href="../src/transformers/models/qwen3_5/modular_qwen3_5.py">modular_qwen3_5.py</a></b><p>应编辑的模块化源：三轴位置、频率交错、模型转发逻辑。</p></div><div class="source"><b><a href="../src/transformers/models/qwen3_5/modeling_qwen3_5.py#L105">modeling_qwen3_5.py · RotaryEmbedding</a></b><p>生成后的独立实现，便于沿具体行号阅读 inv_freq、interleaving 与 cos/sin。</p></div><div class="source"><b><a href="../src/transformers/models/qwen3_5/modeling_qwen3_5.py#L1246">modeling_qwen3_5.py · RoPE index</a></b><p>get_vision_position_ids、get_rope_index、rope_delta 与增量生成。</p></div><div class="source"><b><a href="Qwen3.5/Qwen3.5-9B/preprocessor_config.json">preprocessor_config.json</a></b><p>patch_size=16、merge_size=2、图像像素上下限。</p></div><div class="source"><b><a href="RoPE-Explained.html">RoPE 原理解读</a></b><p>若需先复习普通 RoPE 的复数旋转与相对位置性质，可从这份本地报告开始。</p></div></div></section>
+<footer class="footer">Qwen3.5‑9B M‑RoPE Interactive Note · generated from local source · Chrome 151 verified · <span id="stamp"></span></footer>
+</main>
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=n=>new Intl.NumberFormat('zh-CN').format(n);
+const DPR=()=>Math.min(devicePixelRatio||1,2);
+function canvasSetup(c,h){const w=c.clientWidth||900,d=DPR();c.width=w*d;c.height=h*d;const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return{x,w,h}}
+function roundRect(x,a,b,w,h,r){x.beginPath();x.roundRect(a,b,w,h,r);x.fill()}
+
+$('#themeBtn').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';drawGrid();drawPhase()};
+$('#stamp').textContent='2026-08-20';
+
+const gridInputs=['imgW','imgH','pre','post','viewAxis'].map(id=>$('#'+id));
+function drawGrid(){
+  const W=+$('#imgW').value,H=+$('#imgH').value,pre=+$('#pre').value,post=+$('#post').value;
+  const gh=H/16,gw=W/16,lh=gh/2,lw=gw/2,tokens=lh*lw,span=Math.max(lh,lw),seq=pre+tokens+post,maxPos=pre+span+post-1,delta=maxPos+1-seq;
+  $('#imgWOut').value=W+' px';$('#imgHOut').value=H+' px';$('#preOut').value=pre;$('#postOut').value=post;
+  $('#patchGrid').textContent=gh+'×'+gw;$('#llmGrid').textContent=lh+'×'+lw;$('#visionTokens').textContent=fmt(tokens);$('#positionSpan').textContent=span;$('#ropeDelta').textContent=(delta>0?'+':'')+fmt(delta);
+  const c=$('#gridCanvas'),mobile=c.clientWidth<600,{x,w,h}=canvasSetup(c,mobile?610:430);x.clearRect(0,0,w,h);const ink=css('--ink'),muted=css('--muted'),line=css('--line'),panel=css('--panel2'),colors={t:css('--amber'),h:css('--cyan'),w:css('--pink')};
+  x.font='12px system-ui';x.fillStyle=muted;x.fillText('统一 token 序列（宽度按区段压缩显示）',18,24);
+  const y0=45,trackW=w-36,preW=Math.max(68,trackW*.15),postW=Math.max(68,trackW*.15),visW=trackW-preW-postW;
+  x.fillStyle=panel;roundRect(x,18,y0,preW,48,8);roundRect(x,18+preW+4,y0,visW-8,48,8);roundRect(x,18+preW+visW,y0,postW,48,8);
+  x.fillStyle=ink;x.textAlign='center';x.fillText('文本 '+pre,18+preW/2,y0+28);x.fillText('图像 '+fmt(tokens)+' tokens',18+preW+visW/2,y0+28);x.fillText('文本 '+post,18+preW+visW+postW/2,y0+28);x.textAlign='left';
+  const maxCells=480,scale=Math.min(1,Math.sqrt(maxCells/(lh*lw))),cols=Math.max(1,Math.round(lw*scale)),rows=Math.max(1,Math.round(lh*scale));
+  const areaW=mobile?w-36:Math.min(w*.58,630),areaH=mobile?210:245,cell=Math.min((areaW-20)/cols,(areaH-30)/rows),drawW=cell*cols,drawH=cell*rows,gx=18,gy=136;
+  x.fillStyle=muted;x.fillText(`图像 M‑RoPE 网格 · 原始 ${lh}×${lw}${scale<1?'（采样显示）':''}`,gx,gy-14);
+  const axis=$('#viewAxis').value;
+  for(let r=0;r<rows;r++)for(let col=0;col<cols;col++){
+    const rr=Math.min(lh-1,Math.floor(r/rows*lh)),cc=Math.min(lw-1,Math.floor(col/cols*lw));let fill;
+    if(axis==='h')fill=colors.h;else if(axis==='w')fill=colors.w;else if(axis==='t')fill=colors.t;else{const a=rr/Math.max(1,lh-1),b=cc/Math.max(1,lw-1);fill=`color-mix(in srgb, ${colors.h} ${Math.round((1-b)*55+15)}%, ${colors.w})`}
+    x.fillStyle=fill.startsWith('color-mix')?mixHex(colors.h,colors.w,cc/Math.max(1,lw-1)):fill;x.globalAlpha=.3+.65*(.35+rr/Math.max(1,lh-1)*.25+cc/Math.max(1,lw-1)*.4);x.fillRect(gx+col*cell,gy+r*cell,Math.max(1,cell-1),Math.max(1,cell-1));
+  }x.globalAlpha=1;x.strokeStyle=line;x.strokeRect(gx,gy,drawW,drawH);
+  const rx=mobile?18:Math.min(w-280,gx+drawW+28),ry=mobile?gy+drawH+38:150;x.fillStyle=ink;x.font='700 13px monospace';x.fillText(`start = ${pre}`,rx,ry);x.font='12px monospace';x.fillStyle=colors.t;x.fillText(`T = ${pre}`,rx,ry+31);x.fillStyle=colors.h;x.fillText(`H = ${pre} … ${pre+lh-1}`,rx,ry+57);x.fillStyle=colors.w;x.fillText(`W = ${pre} … ${pre+lw-1}`,rx,ry+83);x.fillStyle=muted;x.fillText(`next = ${pre}+max(${lh},${lw})`,rx,ry+121);x.fillStyle=ink;x.fillText(`     = ${pre+span}`,rx,ry+145);x.fillStyle=muted;x.fillText(`delta = ${pre+span+post} − ${seq}`,rx,ry+183);x.fillStyle=ink;x.fillText(`      = ${delta}`,rx,ry+207);
+  $('#gridCaption').innerHTML=`这张 ${W}×${H} 图片形成 <code>${gh}×${gw}</code> patch 网格；2×2 merge 后是 <code>${lh}×${lw}=${fmt(tokens)}</code> 个 LLM token，但 M‑RoPE 位置只推进 <code>max(${lh},${lw})=${span}</code>。整段输入有 ${fmt(seq)} 个 token，最大位置为 ${maxPos}，所以 rope_delta=${delta}。`;
+}
+function mixHex(a,b,t){const p=s=>{s=s.replace('#','');if(s.length===3)s=[...s].map(c=>c+c).join('');return[0,2,4].map(i=>parseInt(s.slice(i,i+2),16))};const A=p(a),B=p(b);return '#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('')}
+gridInputs.forEach(i=>i.addEventListener('input',drawGrid));$('#squarePreset').onclick=()=>{$('#imgW').value=448;$('#imgH').value=448;drawGrid()};
+
+let textMode=false;const theta=1e7;function axisOf(i){return i%3===0?'t':i%3===1?'h':'w'}
+function buildStrip(){const box=$('#axisStrip');box.innerHTML='';for(let i=0;i<32;i++){const a=axisOf(i),d=document.createElement('div');d.className='axis-cell '+a;d.textContent=a.toUpperCase()+i;d.title=`pair ${i} · ${a.toUpperCase()} axis`;d.onclick=()=>{$('#pair').value=i;drawPhase()};box.appendChild(d)}}
+function drawPhase(){let t=+$('#tPos').value,h=+$('#hPos').value,w=+$('#wPos').value,i=+$('#pair').value;if(textMode)h=w=t;$('#tOut').value=t;$('#hOut').value=h;$('#wOut').value=w;$('#pairOut').value=i;$('#hPos').disabled=textMode;$('#wPos').disabled=textMode;const a=axisOf(i),p={t,h,w}[a],freq=theta**(-2*i/64),raw=p*freq,phase=((raw%(2*Math.PI))+2*Math.PI)%(2*Math.PI);$$('.axis-cell').forEach((e,j)=>e.classList.toggle('on',j===i));$('#phaseHand').style.background=css(a==='t'?'--amber':a==='h'?'--cyan':'--pink');$('#phaseHand').style.transform=`rotate(${-phase}rad)`;$('#rPair').textContent=i;$('#rAxis').textContent=a.toUpperCase();$('#rAxis').style.color=css(a==='t'?'--amber':a==='h'?'--cyan':'--pink');$('#rPos').textContent=p;$('#rFreq').textContent=freq.toExponential(4);$('#rRaw').textContent=raw.toFixed(6)+' rad';$('#rPhase').textContent=phase.toFixed(6)+' rad';
+  const c=$('#phaseCanvas'),{x,w:ww,h:hh}=canvasSetup(c,260),pad=35,usable=ww-pad*2;x.clearRect(0,0,ww,hh);x.strokeStyle=css('--line');x.fillStyle=css('--muted');x.font='11px monospace';for(let k=0;k<=4;k++){const y=25+k*48;x.beginPath();x.moveTo(pad,y);x.lineTo(ww-pad,y);x.stroke();x.fillText((1-k*.5).toFixed(1),4,y+4)}x.fillStyle=css('--muted');x.fillText('cos(φᵢ) across 32 pairs',pad,246);const vals=[];for(let j=0;j<32;j++){const ax=axisOf(j),pos={t,h,w}[ax],v=Math.cos(pos*theta**(-2*j/64));vals.push(v)}for(let j=0;j<32;j++){const bw=usable/32-2,xx=pad+j*usable/32,yMid=121,bar=-vals[j]*88;x.fillStyle=css(axisOf(j)==='t'?'--amber':axisOf(j)==='h'?'--cyan':'--pink');x.globalAlpha=j===i?1:.58;x.fillRect(xx,yMid,Math.max(2,bw),bar);if(j===i){x.strokeStyle=css('--ink');x.strokeRect(xx-2,27,bw+4,190)}}x.globalAlpha=1;
+}
+['tPos','hPos','wPos','pair'].forEach(id=>$('#'+id).addEventListener('input',drawPhase));$('#textToggle').onclick=()=>{textMode=!textMode;$('#textToggle').textContent=textMode?'恢复图像三轴':'切换为纯文本位置';drawPhase()};
+buildStrip();drawGrid();drawPhase();addEventListener('resize',()=>{drawGrid();drawPhase()});
+</script>
+</body>
+</html>
