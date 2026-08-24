@@ -124,11 +124,73 @@ code{font:12.5px/1.5 var(--mono);color:var(--accent-2);background:var(--soft);pa
   <p>这里的 <code>N=Σ(T·H·W)</code> 是 batch 内所有媒体的 patch 总数。源码之后通过累积 <code>cu_seqlens</code> 把不同媒体打包送入非因果视觉注意力，避免把不同样本互相注意。</p>
 
   <h3 id="vision-position">2.2 绝对位置插值与 Vision RoPE</h3>
-  <p>Qwen3.5 同时使用两套位置讯号：可学习二维位置表经双线性权重插值后直接加到 patch embedding；另一套 Vision RoPE 由实际网格坐标生成 cos/sin，进入每个视觉注意力层。前者提供全局空间先验，后者直接改变 Q/K 的相对相位。</p>
-  <pre><code>bilinear_indices, bilinear_weights = get_vision_bilinear_indices_and_weights(grid_thw)
-hidden = patch_embed(pixels)
-hidden += Σ pos_embed[index] · bilinear_weight
-position_embeddings = (rotary(grid_position).cos(), rotary(grid_position).sin())</code></pre>
+  <p>Qwen3.5 在视觉塔内并行使用两类位置机制，但二者作用位置完全不同：<strong>可学习绝对位置向量加到 patch embedding</strong>，改变送入所有视觉层的 residual stream；<strong>Vision RoPE 在每个视觉注意力层内旋转 Q/K</strong>，改变 token 两两之间的注意力相位，而不旋转 V。<a class="evidence e-code" href="../src/transformers/models/qwen3_5/modular_qwen3_5.py#L459">CODE</a></p>
+
+  <h4>可学习的 48×48 绝对位置表</h4>
+  <p><code>num_position_embeddings=2304</code>，因此初始化得到 <code>pos_embed: Embedding(2304,1152)</code>，并令 <code>side=√2304=48</code>。它可以看成一张 48×48 的可学习二维网格，每个格点存放一个 1152 维向量。实际图像的 patch 网格可以是任意 <code>H×W</code>；代码不是裁剪或整数取样，而是把目标网格的两条轴分别用 <code>linspace(0,47,H/W)</code> 对齐到完整 48×48 表的两端。<a class="evidence e-code" href="../src/transformers/vision_utils.py#L163">CODE</a></p>
+  <div class="formula">h_grid[i] = i·47/(H−1), &emsp; w_grid[j] = j·47/(W−1)<small>沿用源码变量名：目标 patch (i,j) 映射到可学习位置表中的连续坐标 (h_grid[i], w_grid[j])；常规动态网格 H,W≥2。</small></div>
+  <p>接下来完全沿用源码符号。<code>h_floor=floor(h_grid)</code>、<code>w_floor=floor(w_grid)</code> 是向下取整得到的上方/左侧格点；实现中写作 <code>h_grid.int()</code>/<code>w_grid.int()</code>，由于坐标非负，效果与数学上的 floor 相同。<code>h_ceil=min(h_floor+1,47)</code>、<code>w_ceil=min(w_floor+1,47)</code> 是向上相邻的下方/右侧格点。连续坐标超过 floor 的小数距离也使用代码名：</p>
+  <div class="formula">h_frac = h_grid − h_floor, &emsp; w_frac = w_grid − w_floor<small>h_frac 表示从上方格点向下走过的比例，w_frac 表示从左侧格点向右走过的比例；二者均位于 [0,1)。</small></div>
+  <p class="note audit"><strong><code>ceil</code> 的代码语义。</strong>源码中的 <code>h_ceil</code>/<code>w_ceil</code> 表示“下一个相邻索引”，通过 <code>floor+1</code> 再 clamp 得到。连续坐标恰为内部整数时，它可能不同于数学函数 <code>ceil(x)</code>，但此时 <code>frac=0</code>，所有 ceil 方向的权重都是 0，插值结果仍完全一致；到 47 边界时则 clamp 为 <code>floor=ceil=47</code>。</p>
+  <div class="formula">p<sub>abs</sub>(i,j) = (1−h_frac)(1−w_frac)E[h_floor,w_floor] + (1−h_frac)w_frac E[h_floor,w_ceil]<br>+ h_frac(1−w_frac)E[h_ceil,w_floor] + h_frac·w_frac E[h_ceil,w_ceil]<small>四个权重分别对应左上、右上、左下、右下，非负且总和为 1。</small></div>
+
+  <h4>实例：8×12 网格中的 patch (3,5)</h4>
+  <p>取交互演示的默认值 <code>H=8</code>、<code>W=12</code>、<code>i=3</code>、<code>j=5</code>。该 patch 在 48×48 表上的连续坐标及取整结果为：</p>
+  <pre><code>h_grid = 3 × 47 / (8 − 1)  = 20.142857
+w_grid = 5 × 47 / (12 − 1) = 21.363636
+
+h_floor = 20    h_ceil = 21    h_frac = 0.142857
+w_floor = 21    w_ceil = 22    w_frac = 0.363636</code></pre>
+  <table class="facts"><thead><tr><th>位置表角点</th><th>源码中的权重表达式</th><th>数值</th><th>空间含义</th></tr></thead><tbody>
+    <tr><td><code>E[20,21]</code></td><td><code>(1-h_frac)(1-w_frac)</code></td><td>0.5455</td><td>左上；距离最近，权重最大</td></tr>
+    <tr><td><code>E[20,22]</code></td><td><code>(1-h_frac)w_frac</code></td><td>0.3117</td><td>右上</td></tr>
+    <tr><td><code>E[21,21]</code></td><td><code>h_frac(1-w_frac)</code></td><td>0.0909</td><td>左下</td></tr>
+    <tr><td><code>E[21,22]</code></td><td><code>h_frac·w_frac</code></td><td>0.0519</td><td>右下</td></tr>
+  </tbody></table>
+  <p>因此 <code>p_abs(3,5)</code> 是上述四个 1152 维表向量按 <code>0.5455、0.3117、0.0909、0.0519</code> 加权后的结果。因为 <code>h_frac</code> 很小，它更靠近第 20 行；因为 <code>w_frac</code> 约为 0.364，它在第 21 列和第 22 列之间更偏向第 21 列。</p>
+  <p>函数返回 <code>bilinear_indices:[4,N]</code> 和 <code>bilinear_weights:[4,N]</code>。模型一次查出四组位置向量，广播权重到隐藏维后求和：</p>
+  <pre><code># N = Σ(T·H·W), Dv = 1152
+patch = patch_embed(pixel_values)                              # [N, Dv]
+corners = pos_embed(bilinear_indices)                          # [4, N, Dv]
+pos_abs = (corners * bilinear_weights[:, :, None]).sum(0)      # [N, Dv]
+x₀ = patch + pos_abs                                           # [N, Dv]</code></pre>
+  <p>这是一次真正的向量加法，不是 attention bias。于是第一层的 <code>LayerNorm(x₀)</code>、Q/K/V 投影以及后续 MLP 都能读到绝对空间位置；经 residual connection 传播后，这项讯号会留在整个 27 层视觉塔中。</p>
+
+  <h4>为什么还要按 2×2 block 重排</h4>
+  <p>绝对位置计算先在普通 raster order 上生成，再用 <code>spatial_merge_size=2</code> 构造的 <code>reorder</code> 重排为 block-major：先排列同一个 2×2 merger block 内的四个 patch，再排列下一个 block，并对每个时间片重复。Vision RoPE 的 <code>position_ids</code> 使用同样的 reshape–transpose–flatten 次序。因此三者——patch token、绝对位置向量和 RoPE 坐标——在进入 ViT 前保持逐项对齐。绝对位置表同样只按 H/W 查表并在 T 上重复；视觉塔内的显式时间位置要与语言侧后续 M-RoPE 的 temporal channel 区分。</p>
+  <div class="shape-flow"><span>raster: (0,0),(0,1),(0,2)…</span><i>→ merge-aware reorder</i><span>block₀: (0,0),(0,1),(1,0),(1,1)</span><i>→</i><span>block₁ …</span></div>
+
+  <h4>Vision RoPE：把二维坐标变成 72 维旋转相位</h4>
+  <p>视觉注意力宽度为 1152、16 heads，所以 <code>head_dim=72</code>。模型构造 <code>VisionRotaryEmbedding(head_dim//2=36)</code>；其 <code>arange(0,36,2)</code> 产生 18 个逆频率：</p>
+  <div class="formula">ω<sub>r</sub> = 10000<sup>−2r/36</sup>, &emsp; r=0,…,17<small>Vision RoPE 的 θ 使用该基础类默认值 10,000；它与语言模型的 rope_theta=10,000,000 不是同一个配置。</small></div>
+  <p><code>get_vision_position_ids</code> 为每个 patch 返回二维整数坐标 <code>(h,w)</code>。默认 <code>include_temporal=False</code>，所以视频只是把同一套 H/W 坐标重复 T 次：视觉塔的 RoPE 没有显式时间轴。位置与频率外积后，先得到 18 个高度相位和 18 个宽度相位，再复制一次以匹配 72 维 head：</p>
+  <div class="shape-flow"><span>position_ids [N,2]</span><i>×</i><span>inv_freq [18]</span><i>→</i><span>φ [N,2,18]</span><i>flatten + duplicate</i><span>cos,sin [N,72]</span></div>
+  <pre><code>φ = [h·ω₀…h·ω₁₇, w·ω₀…w·ω₁₇]                  # [N, 36]
+angle = concat(φ, φ)                            # [N, 72]
+cos, sin = angle.cos(), angle.sin()             # 每个 block 复用
+q′ = q * cos + rotate_half(q) * sin
+k′ = k * cos + rotate_half(k) * sin             # V 保持不变</code></pre>
+  <p><code>rotate_half</code> 把 head 前 36 维与后 36 维配对：前 18 对承载高度旋转，后 18 对承载宽度旋转。计算临时升到 float32，旋转后再还原 Q/K dtype，以降低三角函数和乘加的数值误差。相同的 cos/sin 在 27 个 block 中复用，但每层都有自己的 Q/K 投影。<a class="evidence e-code" href="../src/transformers/models/qwen2_vl/modeling_qwen2_vl.py#L249">CODE</a></p>
+  <div class="formula">⟨R(φ<sub>i</sub>)q<sub>i</sub>, R(φ<sub>j</sub>)k<sub>j</sub>⟩ = q<sub>i</sub><sup>⊤</sup>R(φ<sub>j</sub>−φ<sub>i</sub>)k<sub>j</sub><small>共同绝对旋转在内积中相消，留下 Δh·ω 和 Δw·ω；这就是二维相对位移进入 attention score 的位置。</small></div>
+
+  <div class="diagram" aria-label="绝对位置插值与 Vision RoPE 数据流">
+  <svg viewBox="0 0 980 510" role="img" aria-labelledby="visionPosTitle">
+    <title id="visionPosTitle">绝对位置插值与 Vision RoPE 如何共同作用于 patch</title>
+    <rect x="38" y="42" width="210" height="55" rx="4" class="node vision"/><text x="143" y="65" text-anchor="middle" class="label">Pixel Patch</text><text x="143" y="84" text-anchor="middle" class="small">3×2×16×16</text>
+    <rect x="38" y="140" width="210" height="55" rx="4" class="node"/><text x="143" y="163" text-anchor="middle" class="label">Conv3D Patch Embed</text><text x="143" y="182" text-anchor="middle" class="small">xpatch ∈ ℝ¹¹⁵²</text><path d="M143 97V140" class="arrow"/>
+    <rect x="352" y="42" width="250" height="55" rx="4" class="node vision"/><text x="477" y="65" text-anchor="middle" class="label">Learned 48×48 Table</text><text x="477" y="84" text-anchor="middle" class="small">four corners · bilinear weights</text>
+    <rect x="352" y="140" width="250" height="55" rx="4" class="node vision"/><text x="477" y="163" text-anchor="middle" class="label">Interpolated pabs(i,j)</text><text x="477" y="182" text-anchor="middle" class="small">weighted sum ∈ ℝ¹¹⁵²</text><path d="M477 97V140" class="arrow"/>
+    <circle cx="310" cy="238" r="19" class="node"/><text x="310" y="244" text-anchor="middle" class="label">+</text><path d="M143 195V238H291" class="arrow"/><path d="M477 195V238H329" class="arrow"/>
+    <rect x="210" y="284" width="200" height="52" rx="4" class="node linear"/><text x="310" y="306" text-anchor="middle" class="label">x₀ = xpatch + pabs</text><text x="310" y="324" text-anchor="middle" class="small">enters residual stream</text><path d="M310 257V284" class="arrow"/>
+    <rect x="210" y="380" width="200" height="55" rx="4" class="node"/><text x="310" y="403" text-anchor="middle" class="label">LayerNorm → Q,K,V</text><text x="310" y="422" text-anchor="middle" class="small">absolute position affects all</text><path d="M310 336V380" class="arrow"/>
+    <rect x="684" y="42" width="250" height="55" rx="4" class="node attn"/><text x="809" y="65" text-anchor="middle" class="label">Integer (h,w)</text><text x="809" y="84" text-anchor="middle" class="small">block-major · repeated over T</text>
+    <rect x="684" y="140" width="250" height="55" rx="4" class="node attn"/><text x="809" y="163" text-anchor="middle" class="label">18 Frequencies / Axis</text><text x="809" y="182" text-anchor="middle" class="small">cos,sin ∈ ℝ⁷²</text><path d="M809 97V140" class="arrow"/>
+    <rect x="620" y="284" width="300" height="52" rx="4" class="node attn"/><text x="770" y="306" text-anchor="middle" class="label">Rotate Q and K · V unchanged</text><text x="770" y="324" text-anchor="middle" class="small">applied inside every Vision Block</text><path d="M809 195V284" class="arrow"/>
+    <path d="M410 407H620" class="arrow"/><rect x="570" y="380" width="250" height="55" rx="4" class="node vision"/><text x="695" y="403" text-anchor="middle" class="label">Non-causal Self-Attention</text><text x="695" y="422" text-anchor="middle" class="small">softmax(Q′K′ᵀ/√72)V</text><path d="M770 336V380" class="arrow"/>
+    <text x="490" y="482" text-anchor="middle" class="small">绝对位置：加法注入 hidden state，一次注入、沿 residual 传播　·　RoPE：乘法旋转 Q/K，每层注意力重复应用</text>
+  </svg>
+  </div>
+  <p class="note"><strong>两者不是重复编码。</strong>绝对位置表学习“这个 patch 位于整幅画面的哪里”的内容偏置，并通过插值适配动态分辨率；RoPE 让 Q/K 内积显式依赖二维相对位移。前者改变 token 表示本身，后者改变 token 间的匹配几何。参见 <a href="#demo-vit-position">联合交互演示</a>。</p>
 
   <h3 id="vision-vit">2.3 27 层 Vision Transformer</h3>
   <div class="diagram">
@@ -320,6 +382,21 @@ outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</c
   <details class="demo" id="demo-cache" data-demo="cache">
     <summary><span class="demo-index">D08</span><span class="demo-title">缓存复杂度<span class="demo-sub">比较 40 层全 GQA、纯递归状态与本模型 3:1 混合缓存。</span></span><span class="demo-toggle"></span></summary>
     <div class="demo-body"><div class="controls"><label>上下文长度 <input id="cacheLen" type="range" min="1024" max="262144" step="1024" value="65536"><output id="cacheLenOut">65K</output></label><label>dtype bytes <select id="cacheDtype"><option value="2">BF16 / FP16</option><option value="1">INT8 / FP8</option><option value="4">FP32</option></select></label></div><canvas id="cacheCanvas" width="900" height="300" aria-label="缓存增长对比图"></canvas><div class="step-caption" id="cacheCaption"></div></div>
+  </details>
+
+  <details class="demo" id="demo-vit-position" data-demo="vitpos">
+    <summary><span class="demo-index">D09</span><span class="demo-title">VIT 绝对位置插值 + Vision RoPE<span class="demo-sub">选择动态网格中的 patch，追踪四邻点插值、embedding 相加与 Q/K 二维旋转。</span></span><span class="demo-toggle"></span></summary>
+    <div class="demo-body">
+      <div class="controls">
+        <label>网格 H <input id="vitGridH" type="range" min="4" max="16" step="2" value="8"><output id="vitGridHOut">8</output></label>
+        <label>网格 W <input id="vitGridW" type="range" min="4" max="16" step="2" value="12"><output id="vitGridWOut">12</output></label>
+        <label>patch h <input id="vitPatchH" type="range" min="0" max="7" value="3"><output id="vitPatchHOut">3</output></label>
+        <label>patch w <input id="vitPatchW" type="range" min="0" max="11" value="5"><output id="vitPatchWOut">5</output></label>
+        <label>频率 r <input id="vitFreq" type="range" min="0" max="17" value="3"><output id="vitFreqOut">3</output></label>
+      </div>
+      <canvas id="vitPosCanvas" width="1000" height="430" aria-label="绝对位置双线性插值与 Vision RoPE 联动图"></canvas>
+      <div class="step-caption" id="vitPosCaption"></div>
+    </div>
   </details>
 </section>
 
@@ -1201,6 +1278,7 @@ outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</c
     <div class="source"><div><b><a href="Qwen3.5/Qwen3.5-35B-A3B/README.md">Qwen3.5-35B-A3B 官方模型卡</a></b><p>结构摘要、上下文、部署方式、完整 benchmark 与评测脚注。</p></div></div>
     <div class="source"><div><b><a href="../src/transformers/models/qwen3_5_moe/modular_qwen3_5_moe.py">Transformers · modular_qwen3_5_moe.py</a></b><p>MoE 配置、Qwen3.5 组件组合、decoder layer 与 HF MTP 加载边界。</p></div></div>
     <div class="source"><div><b><a href="../src/transformers/models/qwen3_5/modular_qwen3_5.py">Transformers · modular_qwen3_5.py</a></b><p>Gated DeltaNet、partial M-RoPE、vision forward、Early Fusion 与四路位置索引。</p></div></div>
+    <div class="source"><div><b><a href="../src/transformers/vision_utils.py">Transformers · vision_utils.py</a></b><p>48×48 位置表的双线性索引与权重，以及与 2×2 merger 对齐的 H/W position ids 重排。</p></div></div>
     <div class="source"><div><b><a href="../src/transformers/models/qwen3_next/modular_qwen3_next.py">Transformers · modular_qwen3_next.py</a></b><p>GQA output gate、delta-rule fallback、cache 分支、MoE 与模型骨架的继承来源。</p></div></div>
     <div class="source"><div><b><a href="../src/transformers/models/qwen3_vl/modular_qwen3_vl.py">Transformers · modular_qwen3_vl.py</a></b><p>Vision Patch Embed、Patch Merger、Vision Block 和 VLM 基础接口。</p></div></div>
     <div class="source"><div><b><a href="../src/transformers/models/qwen3_vl_moe/modular_qwen3_vl_moe.py">Transformers · modular_qwen3_vl_moe.py</a></b><p>无 bias Top-k router 的 softmax、Top-8 与重归一化实现。</p></div></div>
@@ -1267,7 +1345,7 @@ outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</c
   function stopTimer(name){ if(timers.has(name)){ clearInterval(timers.get(name)); timers.delete(name); } }
   function runTimer(name, fn, ms=750){ stopTimer(name); timers.set(name,setInterval(fn,ms)); }
   function initDemo(name, redraw=false){
-    ({fusion:initFusion,layers:initLayers,gdn:initGDN,gqa:initGQA,moe:initMoE,mtp:initMTP,mrope:initMRope,cache:initCache}[name]||(()=>{}))(redraw);
+    ({fusion:initFusion,layers:initLayers,gdn:initGDN,gqa:initGQA,moe:initMoE,mtp:initMTP,mrope:initMRope,cache:initCache,vitpos:initVitPos}[name]||(()=>{}))(redraw);
   }
   function bindOnce(el, type, fn){ if(!el || el.dataset['bound'+type]) return; el.addEventListener(type,fn); el.dataset['bound'+type]='1'; }
   function action(name, fn){ const el=document.querySelector(`[data-action="${name}"]`); bindOnce(el,'click',fn); }
@@ -1324,7 +1402,7 @@ outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</c
   function drawMTP(){const n=+$('mtpAccept').value;$('mtpAcceptOut').value=n;const draft=['A','B','C','D'],verified=draft.map((x,i)=>i<n?x:(i===n?'X':'·'));const rows=[['context','t₀','t₁'],['MTP draft',...draft],['main verify',...verified],['commit',...draft.slice(0,n),n<4?'X':'✓']];const shown=Math.min(mtpStep+1,rows.length);$('mtpViz').innerHTML=rows.slice(0,shown).map((r,ri)=>`<div class="token-row" style="margin:7px 0"><b style="width:90px;font:11px var(--sans)">${r[0]}</b>${r.slice(1).map((x,i)=>`<span class="token ${ri===3&&i<n?'visual':''}">${x}</span>`).join('')}</div>`).join('')+`<div class="step-caption">${['① 主模型产出当前 token 与 hidden state。','② MTP 连续提出 4 个候选 token。','③ 主模型一次前向并行计算候选位置的真实分布。','④ 接受最长一致前缀；首个不一致位置采用主模型 token。','⑤ 从新提交的末尾继续下一轮，主模型分布保持最终正确性。'][mtpStep]}</div>`; }
 
   // Canvas helpers
-  function setupCanvas(c){const rect=c.getBoundingClientRect(),dpr=devicePixelRatio||1;c.width=Math.max(300,rect.width*dpr);c.height=260*dpr;const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return{x,w:rect.width,h:260};}
+  function setupCanvas(c,height=260){const rect=c.getBoundingClientRect(),dpr=devicePixelRatio||1;c.style.height=height+'px';c.width=Math.max(300,rect.width*dpr);c.height=height*dpr;const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return{x,w:rect.width,h:height};}
   function initMRope(){ ['ropeT','ropeH','ropeW','ropeText'].forEach(id=>bindOnce($(id),'input',drawMRope));drawMRope(); }
   function drawMRope(){const vals=[$('ropeT').valueAsNumber,$('ropeH').valueAsNumber,$('ropeW').valueAsNumber],isText=$('ropeText').checked;if(isText)vals[1]=vals[2]=vals[0];['T','H','W'].forEach((axis,i)=>$("rope"+axis+"Out").value=vals[i]);const {x,w,h}=setupCanvas($('ropeCanvas'));x.clearRect(0,0,w,h);x.fillStyle=css('--muted');x.font='12px '+css('--sans');x.fillText(isText?'纯文本：三轴使用相同序列位置':'视觉 token：时间 / 高度 / 宽度独立取值',18,22);const colors=[css('--accent'),css('--blue'),css('--gold')],names=['temporal · 11 pairs','height · 11 pairs','width · 10 pairs'];vals.forEach((p,i)=>{const cy=72+i*70,r=24,angle=(p*(i+1)*.32)%(Math.PI*2);x.strokeStyle=colors[i];x.lineWidth=2;x.beginPath();x.arc(70,cy,r,0,Math.PI*2);x.stroke();x.beginPath();x.moveTo(70,cy);x.lineTo(70+Math.cos(angle)*r,cy-Math.sin(angle)*r);x.stroke();x.fillStyle=colors[i];x.fillText(`${names[i]} · p=${p} · phase=${angle.toFixed(2)} rad`,115,cy+4);const start=350,span=Math.max(220,w-390);for(let j=0;j<(i===2?10:11);j++){const a=(p*Math.pow(1e7,-2*j/64))%(Math.PI*2);x.globalAlpha=.3+Math.abs(Math.cos(a))*.7;x.fillStyle=colors[i];x.fillRect(start+j*span/11,cy-9,Math.max(4,span/12),18);x.globalAlpha=1;}});}
 
@@ -1332,7 +1410,53 @@ outputs = language_model(inputs_embeds=inputs_embeds, position_ids=mrope_ids)</c
   function initCache(){ ['cacheLen','cacheDtype'].forEach(id=>bindOnce($(id),'input',drawCache));drawCache(); }
   function drawCache(){const L=$('cacheLen').valueAsNumber,bytes=+$('cacheDtype').value;$('cacheLenOut').value=L>=1024?Math.round(L/1024)+'K':L;const {x,w,h}=setupCanvas($('cacheCanvas')),pad={l:58,r:20,t:25,b:42},pw=w-pad.l-pad.r,ph=h-pad.t-pad.b,maxL=262144,gdnState=32*128*128+4*8192;const full=l=>40*l*1024*bytes,hybrid=l=>(10*l*1024+30*gdnState)*bytes,recur=()=>40*gdnState*bytes,max=full(maxL);x.clearRect(0,0,w,h);x.strokeStyle=css('--line-strong');x.beginPath();x.moveTo(pad.l,pad.t);x.lineTo(pad.l,h-pad.b);x.lineTo(w-pad.r,h-pad.b);x.stroke();const curves=[[full,css('--red'),'40-layer GQA'],[hybrid,css('--accent'),'Qwen3.5 hybrid'],[recur,css('--blue'),'40-layer recurrent']];curves.forEach(([fn,c,name],ci)=>{x.strokeStyle=c;x.lineWidth=2;x.beginPath();for(let i=0;i<=100;i++){const l=maxL*i/100,px=pad.l+pw*i/100,py=pad.t+ph*(1-fn(l)/max);i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.fillStyle=c;x.font='11px '+css('--sans');x.fillText(name,w-165,18+ci*16);});const px=pad.l+pw*L/maxL;x.setLineDash([4,3]);x.strokeStyle=css('--muted');x.beginPath();x.moveTo(px,pad.t);x.lineTo(px,h-pad.b);x.stroke();x.setLineDash([]);x.fillStyle=css('--muted');x.font='10px '+css('--sans');x.fillText('0',pad.l-4,h-pad.b+18);x.fillText('262K',w-pad.r-28,h-pad.b+18);const fmt=n=>(n/1024/1024/1024).toFixed(2)+' GiB';$('cacheCaption').innerHTML=`batch=1、仅计缓存元素的理论估算：全 40 层 GQA <b>${fmt(full(L))}</b>；本模型 hybrid <b>${fmt(hybrid(L))}</b>；纯递归 <b>${fmt(recur(L))}</b>。未计 allocator、对齐、视觉 token 与运行时 workspace。`; }
 
-  addEventListener('resize',()=>$$('.demo[open]').forEach(d=>{if(['mrope','cache'].includes(d.dataset.demo))initDemo(d.dataset.demo,true)}));
+  // D09 ViT absolute-position interpolation and Vision RoPE
+  function initVitPos(){
+    ['vitGridH','vitGridW','vitPatchH','vitPatchW','vitFreq'].forEach(id=>bindOnce($(id),'input',drawVitPos));
+    drawVitPos();
+  }
+  function drawVitPos(){
+    const H=$('vitGridH').valueAsNumber,W=$('vitGridW').valueAsNumber;
+    $('vitPatchH').max=H-1;$('vitPatchW').max=W-1;
+    $('vitPatchH').value=Math.min($('vitPatchH').valueAsNumber,H-1);$('vitPatchW').value=Math.min($('vitPatchW').valueAsNumber,W-1);
+    const ph=$('vitPatchH').valueAsNumber,pw=$('vitPatchW').valueAsNumber,r=$('vitFreq').valueAsNumber;
+    [['vitGridHOut',H],['vitGridWOut',W],['vitPatchHOut',ph],['vitPatchWOut',pw],['vitFreqOut',r]].forEach(([id,v])=>$(id).value=v);
+    const hGrid=ph*47/(H-1),wGrid=pw*47/(W-1),hFloor=Math.floor(hGrid),hCeil=Math.min(hFloor+1,47),wFloor=Math.floor(wGrid),wCeil=Math.min(wFloor+1,47),hFrac=hGrid-hFloor,wFrac=wGrid-wFloor;
+    const corners=[[hFloor,wFloor,(1-hFrac)*(1-wFrac)],[hFloor,wCeil,(1-hFrac)*wFrac],[hCeil,wFloor,hFrac*(1-wFrac)],[hCeil,wCeil,hFrac*wFrac]];
+    const canvas=$('vitPosCanvas'),mobile=canvas.getBoundingClientRect().width<820,{x,w,h}=setupCanvas(canvas,mobile?680:430);
+    const ink=css('--ink'),muted=css('--muted'),line=css('--line-strong'),surface=css('--surface'),soft=css('--soft'),blue=css('--blue'),gold=css('--gold'),accent=css('--accent'),red=css('--red');
+    x.clearRect(0,0,w,h);x.lineWidth=1;x.font='11px '+css('--sans');
+    const label=(s,px,py,color=muted,align='left')=>{x.fillStyle=color;x.textAlign=align;x.fillText(s,px,py);x.textAlign='left';};
+    const box=(px,py,bw,bh,title)=>{x.fillStyle=surface;x.strokeStyle=line;x.fillRect(px,py,bw,bh);x.strokeRect(px+.5,py+.5,bw-1,bh-1);label(title,px+9,py+18,ink);};
+    const arrow=(x0,y0,x1,y1,color=muted)=>{x.strokeStyle=color;x.fillStyle=color;x.lineWidth=1.5;x.beginPath();x.moveTo(x0,y0);x.lineTo(x1,y1);x.stroke();const ang=Math.atan2(y1-y0,x1-x0);x.beginPath();x.moveTo(x1,y1);x.lineTo(x1-7*Math.cos(ang-.45),y1-7*Math.sin(ang-.45));x.lineTo(x1-7*Math.cos(ang+.45),y1-7*Math.sin(ang+.45));x.closePath();x.fill();};
+    const grid=(gx,gy,gw,gh,rows,cols,selR,selC,map48=false)=>{const cw=gw/cols,ch=gh/rows;x.strokeStyle=css('--line');x.lineWidth=.7;for(let i=0;i<=rows;i++){x.beginPath();x.moveTo(gx,gy+i*ch);x.lineTo(gx+gw,gy+i*ch);x.stroke()}for(let j=0;j<=cols;j++){x.beginPath();x.moveTo(gx+j*cw,gy);x.lineTo(gx+j*cw,gy+gh);x.stroke()}if(!map48){x.fillStyle=blue;x.globalAlpha=.35;x.fillRect(gx+selC*cw,gy+selR*ch,cw,ch);x.globalAlpha=1;x.strokeStyle=blue;x.lineWidth=2;x.strokeRect(gx+selC*cw,gy+selR*ch,cw,ch)}else{const mx=gx+(wGrid/47)*gw,my=gy+(hGrid/47)*gh;x.fillStyle=gold;x.globalAlpha=.2;x.fillRect(gx+(wFloor/47)*gw,gy+(hFloor/47)*gh,Math.max(4,(wCeil-wFloor)/47*gw),Math.max(4,(hCeil-hFloor)/47*gh));x.globalAlpha=1;x.strokeStyle=gold;x.lineWidth=2;x.beginPath();x.arc(mx,my,5,0,Math.PI*2);x.stroke()}};
+    const vec=(cx,cy,scale,vx,vy,color,name)=>{x.strokeStyle=css('--line');x.beginPath();x.moveTo(cx-scale,cy);x.lineTo(cx+scale,cy);x.moveTo(cx,cy+scale);x.lineTo(cx,cy-scale);x.stroke();arrow(cx,cy,cx+vx*scale,cy-vy*scale,color);label(name,cx,cy+scale+16,color,'center');};
+    const tableVec=(rr,cc)=>[Math.sin((rr*48+cc)*.37)*.72,Math.cos((rr*48+cc)*.23)*.72];
+    const pAbs=[0,1].map(k=>corners.reduce((s,[rr,cc,wt])=>s+tableVec(rr,cc)[k]*wt,0)),patch=[.62,-.28],sum=[patch[0]+pAbs[0],patch[1]+pAbs[1]];
+    if(!mobile){
+      box(16,30,220,175,`① 动态 patch 网格 ${H}×${W}`);grid(36,58,180,120,H,W,ph,pw);label(`选择 (${ph}, ${pw})`,126,194,blue,'center');
+      box(258,30,250,175,'② 可学习绝对位置表 48×48');grid(278,58,210,120,12,12,0,0,true);label(`h_grid=${hGrid.toFixed(2)} · w_grid=${wGrid.toFixed(2)}`,383,194,gold,'center');arrow(236,115,258,115);
+      box(530,30,w-546,175,'③ 四邻点双线性插值');corners.forEach(([rr,cc,wt],i)=>label(`E[${rr},${cc}] × ${wt.toFixed(3)}`,548,62+i*27,i===0?gold:muted));label(`Σ weight = ${corners.reduce((s,c)=>s+c[2],0).toFixed(3)}`,548,181,accent);
+      box(16,228,492,175,'④ 先加绝对位置，再做 Q/K/V 投影');vec(93,315,38,patch[0],patch[1],blue,'xpatch');label('+',151,318,ink,'center');vec(209,315,38,pAbs[0],pAbs[1],gold,'pabs');label('=',267,318,ink,'center');vec(334,315,38,sum[0]/1.5,sum[1]/1.5,accent,'x₀');arrow(382,315,472,315,accent);label('LN → Wq/Wk/Wv',427,300,accent,'center');
+      box(530,228,w-546,175,'⑤ Vision RoPE 只旋转 Q / K');drawRopePanel(x,548,252,w-582,ph,pw,r,{ink,muted,line,blue,gold,red});
+    }else{
+      box(10,22,(w-30)/2,185,`① patch ${H}×${W}`);grid(22,53,(w-54)/2,120,H,W,ph,pw);label(`(${ph},${pw})`,10+(w-30)/4,194,blue,'center');
+      box(20+(w-30)/2,22,(w-30)/2,185,'② table 48×48');grid(32+(w-30)/2,53,(w-54)/2,120,12,12,0,0,true);label(`h_grid=${hGrid.toFixed(1)} · w_grid=${wGrid.toFixed(1)}`,20+3*(w-30)/4,194,gold,'center');
+      box(10,225,w-20,108,'③ 双线性插值');corners.forEach(([rr,cc,wt],i)=>label(`E[${rr},${cc}]×${wt.toFixed(3)}`,24+(i%2)*(w-48)/2,258+Math.floor(i/2)*25,i===0?gold:muted));label('四权重之和 = 1.000',24,317,accent);
+      box(10,351,w-20,136,'④ xpatch + pabs → x₀ → Q/K/V');vec(65,413,27,patch[0],patch[1],blue,'xpatch');vec(w/2,413,27,pAbs[0],pAbs[1],gold,'pabs');vec(w-65,413,27,sum[0]/1.5,sum[1]/1.5,accent,'x₀');arrow(96,413,w/2-33,413);arrow(w/2+33,413,w-98,413);
+      box(10,505,w-20,155,'⑤ RoPE：Q/K 旋转，V 不变');drawRopePanel(x,24,529,w-48,ph,pw,r,{ink,muted,line,blue,gold,red},true);
+    }
+    const omega=Math.pow(10000,-2*r/36),ah=ph*omega,aw=pw*omega;
+    $('vitPosCaption').innerHTML=`patch <b>(${ph}, ${pw})</b> → <b>h_grid=${hGrid.toFixed(3)}, w_grid=${wGrid.toFixed(3)}</b>；h_floor/h_ceil=<b>${hFloor}/${hCeil}</b>，w_floor/w_ceil=<b>${wFloor}/${wCeil}</b>，h_frac/w_frac=<b>${hFrac.toFixed(3)}/${wFrac.toFixed(3)}</b>。r=${r} 时 ω=${omega.toExponential(3)}，高度相位 hω=<b>${ah.toFixed(3)}</b> rad，宽度相位 wω=<b>${aw.toFixed(3)}</b> rad。图中的二维 embedding 箭头是 1152 维向量的示意投影，不是 checkpoint 激活值；源码中的 RoPE 发生在 Q/K 投影之后，并不直接旋转 x₀。`;
+  }
+  function drawRopePanel(x,px,py,pw,ph,pwCoord,r,c,mobile=false){
+    const omega=Math.pow(10000,-2*r/36),angles=[ph*omega,pwCoord*omega],names=['H pair','W pair'],colors=[c.blue,c.gold],centers=mobile?[[px+55,py+48],[px+150,py+48]]:[[px+52,py+62],[px+150,py+62]];
+    angles.forEach((ang,i)=>{const [cx,cy]=centers[i],rad=27;x.strokeStyle=c.line;x.lineWidth=1;x.beginPath();x.arc(cx,cy,rad,0,Math.PI*2);x.stroke();x.strokeStyle=colors[i];x.lineWidth=2;x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+Math.cos(ang)*rad,cy-Math.sin(ang)*rad);x.stroke();x.fillStyle=colors[i];x.font='10px '+css('--sans');x.textAlign='center';x.fillText(`${names[i]} · ${ang.toFixed(2)} rad`,cx,cy+44);x.textAlign='left';});
+    if(mobile){x.fillStyle=c.muted;x.font='8px '+css('--mono');x.fillText('ωᵣ=10000⁻²ʳ⁄³⁶',px,py+110);x.fillText('Q′/K′=rotate(Q/K,φ)',px+105,py+110);x.fillStyle=c.red;x.fillText('V unchanged',px+105,py+127)}
+    else{const tx=px+215;x.fillStyle=c.muted;x.font='10px '+css('--mono');x.fillText(`ωᵣ = 10000⁻²ʳ⁄³⁶`,tx,py+30);x.fillText(`q′ = q cosφ + rotate(q) sinφ`,tx,py+52);x.fillText(`k′ = k cosφ + rotate(k) sinφ`,tx,py+72);x.fillStyle=c.red;x.fillText('V unchanged',tx,py+94)}
+  }
+
+  addEventListener('resize',()=>$$('.demo[open]').forEach(d=>{if(['mrope','cache','vitpos'].includes(d.dataset.demo))initDemo(d.dataset.demo,true)}));
 })();
 </script>
 </main>
