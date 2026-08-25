@@ -116,9 +116,8 @@ p code, li code { background:var(--code-bg); padding:2px 6px; border-radius:4px;
 .dim { color:var(--dim-color); font-weight:600; }
 
 /* Math */
-.math-block { background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:20px 24px; margin:18px 0; text-align:center; font-size:16px; overflow-x:auto; }
-.math-block .equation { font-family:"Times New Roman",serif; font-size:18px; line-height:2; }
-.math-inline { font-family:"Times New Roman",serif; font-style:italic; color:var(--text); }
+.math-block { background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:16px 24px; margin:18px 0; text-align:center; font-size:16px; overflow-x:auto; }
+.math-block .katex-display { margin:0.3em 0; overflow-x:auto; overflow-y:hidden; }
 .math-block .label { display:block; font-size:12px; color:var(--text-muted); margin-top:8px; font-family:-apple-system,sans-serif; font-style:normal; }
 
 /* Tables */
@@ -184,35 +183,41 @@ section { animation: fadeIn 0.4s ease-out; }
 ul, ol { margin:10px 0 14px 24px; }
 li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 </style>
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"
+    onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false,trust:true})"></script>
 </head>
 <body>
 
 <!-- Sidebar -->
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-title">RoPE 原理详解</div>
-  <a href="#overview">总览</a>
-  <a href="#why-position" class="sub">为什么需要位置编码</a>
-  <a href="#intuition">直觉理解</a>
-  <a href="#intuition-rotate" class="sub">旋转 = 位置</a>
-  <a href="#intuition-relative" class="sub">内积保留相对关系</a>
-  <a href="#math">数学原理</a>
-  <a href="#math-2d" class="sub">2D 旋转矩阵</a>
-  <a href="#math-nd" class="sub">高维推广</a>
-  <a href="#math-complex" class="sub">复数形式</a>
-  <a href="#math-qk" class="sub">Q·K 内积推导</a>
-  <a href="#frequency">频率设计</a>
-  <a href="#freq-base" class="sub">频率基底 &theta;</a>
-  <a href="#freq-extrapolation" class="sub">长度外推</a>
-  <a href="#advantages">关键优势</a>
-  <a href="#code">代码实现</a>
-  <a href="#code-precompute" class="sub">频率预计算</a>
-  <a href="#code-apply" class="sub">应用旋转</a>
-  <a href="#code-full" class="sub">完整实现</a>
-  <a href="#demo-rotation">交互: 旋转可视化</a>
-  <a href="#demo-frequency">交互: 频率探索器</a>
-  <a href="#demo-dotproduct">交互: 内积衰减</a>
-  <a href="#variants">RoPE 变体</a>
-  <a href="#summary">总结</a>
+  <a href="#overview">1. 总览</a>
+  <a href="#why-position" class="sub">1.1 为什么需要位置编码</a>
+  <a href="#intuition">2. 直觉理解</a>
+  <a href="#intuition-rotate" class="sub">2.1 旋转 = 位置</a>
+  <a href="#intuition-relative" class="sub">2.2 内积保留相对关系</a>
+  <a href="#math">3. 数学原理</a>
+  <a href="#math-2d" class="sub">3.1 2D 旋转矩阵</a>
+  <a href="#math-nd" class="sub">3.2 高维推广</a>
+  <a href="#math-complex" class="sub">3.3 复数形式</a>
+  <a href="#math-qk" class="sub">3.4 Q·K 内积推导</a>
+  <a href="#frequency">4. 频率设计</a>
+  <a href="#freq-base" class="sub">4.1 频率基底 &theta;</a>
+  <a href="#freq-extrapolation" class="sub">4.2 长度外推</a>
+  <a href="#advantages">5. 关键优势</a>
+  <a href="#code">6. 代码实现 (Transformers)</a>
+  <a href="#code-precompute" class="sub">6.1 频率计算</a>
+  <a href="#code-apply" class="sub">6.2 rotate_half + apply</a>
+  <a href="#code-full" class="sub">6.3 调用链</a>
+  <a href="#demo-rotation">7. 交互: 旋转可视化</a>
+  <a href="#demo-frequency">8. 交互: 频率探索器</a>
+  <a href="#demo-dotproduct">9. 交互: 内积衰减</a>
+  <a href="#demo-attnscale">10. 交互: attention_scaling 补偿</a>
+  <a href="#variants">11. RoPE 变体</a>
+  <a href="#summary">12. 总结</a>
 </nav>
 
 <!-- Topbar -->
@@ -262,13 +267,13 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
   <div>
     <h4 style="color:var(--red)">没有位置编码</h4>
     <p style="font-size:13px">Attention(Q, K, V) 的结果与输入顺序无关。对于排列 &pi;：</p>
-    <p style="font-size:13px;font-family:serif;font-style:italic;text-align:center">Attention(&pi;(X)) = &pi;(Attention(X))</p>
+    <p style="font-size:13px;text-align:center">\(\text{Attention}(\pi(X)) = \pi(\text{Attention}(X))\)</p>
     <p style="font-size:13px">"I love you" = "you love I" = "love I you"</p>
   </div>
   <div>
     <h4 style="color:var(--green)">有位置编码</h4>
     <p style="font-size:13px">位置编码打破了排列等变性，使模型能区分不同顺序：</p>
-    <p style="font-size:13px;font-family:serif;font-style:italic;text-align:center">f(x, pos) &ne; f(x, pos')</p>
+    <p style=\"font-size:13px;text-align:center\">\(f(x,\ \text{pos}) \neq f(x,\ \text{pos}')\)</p>
     <p style="font-size:13px">"I love you" &ne; "you love I"</p>
   </div>
 </div>
@@ -310,7 +315,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
   <li>位置 0 的 token：不旋转（旋转 0&deg;）</li>
   <li>位置 1 的 token：旋转 &theta;&deg;</li>
   <li>位置 2 的 token：旋转 2&theta;&deg;</li>
-  <li>位置 <span class="math-inline">m</span> 的 token：旋转 <span class="math-inline">m&theta;&deg;</span></li>
+  <li>位置 \(m\) 的 token：旋转 \(m\theta°\)</li>
 </ul>
 
 <div class="diagram-container">
@@ -365,12 +370,8 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <p>RoPE 最精妙的地方在于：当计算 Query 和 Key 的<strong>内积</strong>时，旋转角度的差值自然体现了两个 token 的<strong>相对距离</strong>。</p>
 
 <div class="math-block">
-  <div class="equation">
-    &langle; R(<span style="color:var(--pink)">m</span>&theta;) &middot; q, &nbsp; R(<span style="color:var(--teal)">n</span>&theta;) &middot; k &rangle;
-    &nbsp;=&nbsp;
-    &langle; R((<span style="color:var(--pink)">m</span> &minus; <span style="color:var(--teal)">n</span>)&theta;) &middot; q, &nbsp; k &rangle;
-  </div>
-  <span class="label">内积只依赖相对距离 (m &minus; n)，而非绝对位置 m 或 n</span>
+  \[\langle R(\textcolor{#e64980}{m}\theta) \cdot q,\; R(\textcolor{#0c8599}{n}\theta) \cdot k \rangle = \langle R((\textcolor{#e64980}{m} - \textcolor{#0c8599}{n})\theta) \cdot q,\; k \rangle\]
+  <span class="label">内积只依赖相对距离 \((m - n)\)，而非绝对位置 \(m\) 或 \(n\)</span>
 </div>
 
 <div class="info-box green">
@@ -386,49 +387,30 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <div id="math-2d"></div>
 <h3>3.1 从 2D 旋转矩阵开始</h3>
 
-<p>在二维平面上旋转一个向量 <span class="math-inline">(x₁, x₂)</span>，只需要乘以一个<strong>旋转矩阵</strong>：</p>
+<p>在二维平面上旋转一个向量 \((x_1, x_2)\)，只需要乘以一个<strong>旋转矩阵</strong>：</p>
 
 <div class="math-block">
-  <div class="equation">
-    R(&theta;) = <span style="font-size:28px">(</span>
-    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.5">
-      cos&theta; &nbsp; &minus;sin&theta;<br>
-      sin&theta; &nbsp;&nbsp;&nbsp; cos&theta;
-    </span>
-    <span style="font-size:28px">)</span>
-  </div>
-  <span class="label">2D 旋转矩阵：将向量逆时针旋转 &theta; 角</span>
+  \[R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}\]
+  <span class="label">2D 旋转矩阵：将向量逆时针旋转 \(\theta\) 角</span>
 </div>
 
 <p>关键性质：</p>
 <ul>
-  <li><strong>保范性</strong>：旋转不改变向量长度，<span class="math-inline">||R(&theta;)x|| = ||x||</span></li>
-  <li><strong>可加性</strong>：<span class="math-inline">R(&alpha;) &middot; R(&beta;) = R(&alpha; + &beta;)</span></li>
-  <li><strong>正交性</strong>：<span class="math-inline">R(&theta;)ᵀ = R(&minus;&theta;) = R(&theta;)⁻¹</span></li>
+  <li><strong>保范性</strong>：旋转不改变向量长度，\(\|R(\theta)x\| = \|x\|\)</li>
+  <li><strong>可加性</strong>：\(R(\alpha) \cdot R(\beta) = R(\alpha + \beta)\)</li>
+  <li><strong>正交性</strong>：\(R(\theta)^\top = R(-\theta) = R(\theta)^{-1}\)</li>
 </ul>
 
-<p>对于位置 <span class="math-inline">m</span> 的 token，RoPE 将其 Query/Key 向量旋转 <span class="math-inline">m&theta;</span> 角度：</p>
+<p>对于位置 \(m\) 的 token，RoPE 将其 Query/Key 向量旋转 \(m\theta\) 角度：</p>
 
 <div class="math-block">
-  <div class="equation">
-    q'<sub>m</sub> = R(m&theta;) &middot; q<sub>m</sub> = <span style="font-size:28px">(</span>
-    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.5">
-      cos(m&theta;) &nbsp; &minus;sin(m&theta;)<br>
-      sin(m&theta;) &nbsp;&nbsp;&nbsp; cos(m&theta;)
-    </span>
-    <span style="font-size:28px">)</span>
-    <span style="font-size:28px">(</span>
-    <span style="display:inline-block;text-align:center;vertical-align:middle;line-height:1.3">
-      q₁<br>q₂
-    </span>
-    <span style="font-size:28px">)</span>
-  </div>
+  \[q'_m = R(m\theta) \cdot q_m = \begin{pmatrix} \cos(m\theta) & -\sin(m\theta) \\ \sin(m\theta) & \cos(m\theta) \end{pmatrix} \begin{pmatrix} q_1 \\ q_2 \end{pmatrix}\]
 </div>
 
 <div id="math-nd"></div>
 <h3>3.2 推广到高维：分组旋转</h3>
 
-<p>实际的 Query/Key 向量是 <span class="math-inline">d</span> 维的（如 128 维）。RoPE 将 <span class="math-inline">d</span> 维向量<strong>两两分组</strong>，每组用不同的频率旋转：</p>
+<p>实际的 Query/Key 向量是 \(d\) 维的（如 128 维）。RoPE 将 \(d\) 维向量<strong>两两分组</strong>，每组用不同的频率旋转：</p>
 
 <div class="diagram-container">
 <svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg">
@@ -500,68 +482,274 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 </svg>
 </div>
 
-<p>完整的 <span class="math-inline">d</span> 维 RoPE 旋转矩阵是一个<strong>分块对角矩阵</strong>：</p>
+<p>完整的 \(d\) 维 RoPE 旋转矩阵是一个<strong>分块对角矩阵</strong>：</p>
 
 <div class="math-block">
-  <div class="equation">
-    R<sub>d</sub>(m) = diag( R(m&theta;₁), R(m&theta;₂), ..., R(m&theta;<sub>d/2</sub>) )
-  </div>
-  <span class="label">d/2 个独立的 2D 旋转，每个频率不同</span>
+  \[R_d(m) = \operatorname{diag}\!\bigl(R(m\theta_1),\, R(m\theta_2),\, \ldots,\, R(m\theta_{d/2})\bigr)\]
+  <span class="label">\(d/2\) 个独立的 2D 旋转，每个频率不同</span>
 </div>
 
 <p>其中频率按照几何级数递减：</p>
 <div class="math-block">
-  <div class="equation">
-    &theta;<sub>i</sub> = base<sup>&minus;2(i&minus;1)/d</sup>, &nbsp;&nbsp; i = 1, 2, ..., d/2, &nbsp;&nbsp; base = 10000
-  </div>
+  \[\theta_i = \text{base}^{-2(i-1)/d}, \quad i = 1, 2, \ldots, d/2, \quad \text{base} = 10000\]
   <span class="label">默认 base = 10000，产生从高频到低频的一系列旋转频率</span>
 </div>
 
 <div id="math-complex"></div>
 <h3>3.3 复数形式：更优雅的表达</h3>
 
-<p>将每对相邻元素 <span class="math-inline">(q₂ᵢ₋₁, q₂ᵢ)</span> 看作一个复数 <span class="math-inline">q₂ᵢ₋₁ + q₂ᵢ &middot; i</span>，则旋转就变成了<strong>复数乘法</strong>：</p>
+<p>将每对相邻元素 \((q_{2i-1}, q_{2i})\) 看作一个复数 \(q_{2i-1} + q_{2i} \cdot i\)，则旋转就变成了<strong>复数乘法</strong>：</p>
 
 <div class="math-block">
-  <div class="equation">
-    q'<sub>i</sub> = q<sub>i</sub> &middot; e<sup>im&theta;<sub>i</sub></sup> = (q₂ᵢ₋₁ + q₂ᵢ &middot; <em>i</em>) &middot; (cos(m&theta;<sub>i</sub>) + sin(m&theta;<sub>i</sub>) &middot; <em>i</em>)
-  </div>
+  \[q'_i = q_i \cdot e^{im\theta_i} = (q_{2i-1} + q_{2i} \cdot i) \cdot \bigl(\cos(m\theta_i) + \sin(m\theta_i) \cdot i\bigr)\]
   <span class="label">复数乘以单位圆上的点 = 旋转！这就是 RoPE 最简洁的形式</span>
+</div>
+
+<p>下面逐步说明这个转换的全过程：</p>
+
+<!-- Step 1 -->
+<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+  <div style="min-width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">1</div>
+  <div style="flex:1">
+    <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">相邻两个实数 → 一个复数（仅 reshape，不改变数值）</p>
+    <pre>实数向量 q（d 维）:
+[ q₁,  q₂ | q₃,  q₄ | q₅,  q₆ | ... | q_(d-1), q_d ]
+  第1对        第2对        第3对              第d/2对
+       ↓  reshape(*shape[:-1], -1, 2) + view_as_complex
+复数向量（d/2 个复数）:
+[ q₁+q₂·i,   q₃+q₄·i,   q₅+q₆·i,   ...   q_(d-1)+q_d·i ]
+    q̃₁           q̃₂           q̃₃               q̃_(d/2)</pre>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:6px">这不是近似，只是对同一块内存的不同解读方式。PyTorch 一行完成：<br><code>torch.view_as_complex(q.reshape(*q.shape[:-1], -1, 2))</code></p>
+  </div>
+</div>
+
+<!-- Step 2 -->
+<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+  <div style="min-width:28px;height:28px;border-radius:50%;background:var(--pink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">2</div>
+  <div style="flex:1">
+    <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">旋转因子 = 单位圆上的复数</p>
+    <div class="math-block" style="margin:0 0 8px;">
+      \[e^{im\theta_i} = \cos(m\theta_i) + \sin(m\theta_i) \cdot i\]
+      <span class="label">模长为 1，在复平面单位圆上，代表旋转角度 \(m\theta_i\)</span>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted)">这正是旋转矩阵 cos/sin 元素的来源——复数形式和矩阵形式是同一旋转的两种写法。</p>
+  </div>
+</div>
+
+<!-- Step 3 -->
+<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+  <div style="min-width:28px;height:28px;border-radius:50%;background:var(--purple);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">3</div>
+  <div style="flex:1">
+    <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">复数乘法完整展开（利用 i² = −1）</p>
+    <div class="math-block" style="margin:0 0 8px;text-align:left;padding-left:0;">
+      \[\begin{aligned}
+      \tilde{q}_i \times e^{im\theta_i}
+      &= (q_{2i-1} + q_{2i}\cdot i) \times (\cos(m\theta_i) + \sin(m\theta_i)\cdot i) \\[4pt]
+      &= \textcolor{#364fc7}{q_{2i-1}\!\cdot\!\cos(m\theta_i)}
+       + \textcolor{#e64980}{q_{2i-1}\!\cdot\!\sin(m\theta_i)\!\cdot\! i}
+       + \textcolor{#e64980}{q_{2i}\!\cdot\!\cos(m\theta_i)\!\cdot\! i}
+       + \textcolor{#7048e8}{q_{2i}\!\cdot\!\sin(m\theta_i)\!\cdot\!\mathbf{i^2}} \\[4pt]
+      &= \textcolor{#364fc7}{(q_{2i-1}\cdot\cos(m\theta_i) - q_{2i}\cdot\sin(m\theta_i))}
+       + \textcolor{#e64980}{(q_{2i-1}\cdot\sin(m\theta_i) + q_{2i}\cdot\cos(m\theta_i))\cdot i}
+      \end{aligned}\]
+      <span class="label">
+        <span style="color:var(--accent)">实部 = \(q'_{2i-1}\)</span>&nbsp;&nbsp;|&nbsp;&nbsp;
+        <span style="color:var(--pink)">虚部 = \(q'_{2i}\)</span>&nbsp;&nbsp;|&nbsp;&nbsp;
+        <span style="color:var(--purple)">\(i^2 = -1\)</span>，第4项 sin 符号翻转后并入实部
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Step 4 -->
+<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px;">
+  <div style="min-width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">4</div>
+  <div style="flex:1">
+    <p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">写回实数形式，与 3.1 节的旋转矩阵完全等价</p>
+    <div class="math-block" style="margin:0">
+      \[\begin{aligned}
+      q'_{2i-1} &= q_{2i-1} \cdot \cos(m\theta_i) - q_{2i} \cdot \sin(m\theta_i) \\
+      q'_{2i}   &= q_{2i-1} \cdot \sin(m\theta_i) + q_{2i} \cdot \cos(m\theta_i)
+      \end{aligned}\]
+      <span class="label">与 3.1 节的 2×2 旋转矩阵乘法结果完全一致</span>
+    </div>
+  </div>
 </div>
 
 <div class="info-box purple">
   <div class="box-title">为什么复数形式在代码中更常用？</div>
-  <p>复数乘法只需要 <strong>2 次乘法 + 1 次加减</strong>，而矩阵乘法需要 4 次乘法 + 2 次加减。在实际实现中（如 LLaMA），通常将向量 reshape 为复数张量后直接做逐元素复数乘法，避免构造和存储巨大的旋转矩阵。</p>
-</div>
+  <p>复数乘法和矩阵乘法的<strong>算术运算量完全相同</strong>——展开后都是 4 次乘法 + 2 次加减。复数形式的真正优势在于<strong>代码简洁性</strong>和<strong>工程效率</strong>：</p>
 
-<p>展开后的<strong>实数计算公式</strong>（代码中最终执行的操作）：</p>
+  <table style="margin-top:10px;font-size:13px;">
+    <thead>
+      <tr><th>对比维度</th><th>矩阵形式</th><th>复数形式</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>算术量 (每对)</td><td>4 次乘 + 2 次加减</td><td>4 次乘 + 2 次加减 <strong>(相同)</strong></td></tr>
+      <tr><td>代码行数</td><td>拆分索引 + 4 项运算 + 拼接</td><td><strong>一行：<code>q * freqs</code></strong></td></tr>
+      <tr><td>存储旋转因子</td><td>d/2 个 2×2 矩阵 (= 2d 个实数)</td><td><strong>d/2 个复数 (= d 个实数)</strong></td></tr>
+      <tr><td>GPU 友好度</td><td>需手动管理索引和 reshape</td><td><strong>单个逐元素 kernel，自动融合</strong></td></tr>
+    </tbody>
+  </table>
 
-<div class="math-block">
-  <div class="equation" style="text-align:left;padding-left:40px;">
-    q'₂ᵢ₋₁ = q₂ᵢ₋₁ &middot; cos(m&theta;<sub>i</sub>) &minus; q₂ᵢ &middot; sin(m&theta;<sub>i</sub>)<br>
-    q'₂ᵢ&nbsp;&nbsp;&nbsp; = q₂ᵢ₋₁ &middot; sin(m&theta;<sub>i</sub>) + q₂ᵢ &middot; cos(m&theta;<sub>i</sub>)
-  </div>
+  <details style="margin-top:12px;border-color:var(--purple)">
+    <summary style="font-size:13px">展开：为什么算术量相同？逐项对比</summary>
+    <div class="detail-content">
+      <p style="font-size:13px;margin-bottom:10px">以一对元素 \((q_1, q_2)\) 和旋转因子 \((\cos\theta, \sin\theta)\) 为例：</p>
+      <div class="comparison" style="margin-bottom:12px">
+        <div>
+          <h4 style="color:var(--purple)">矩阵形式展开</h4>
+<pre style="font-size:12px;margin:8px 0">
+<span class="comment"># 2×2 矩阵 × 2 维向量</span>
+<span class="comment"># [cos, -sin] [q1]   [q1·cos - q2·sin]</span>
+<span class="comment"># [sin,  cos] [q2] = [q1·sin + q2·cos]</span>
+
+out1 = q1*cos - q2*sin  <span class="comment"># 2 次乘 + 1 次减</span>
+out2 = q1*sin + q2*cos  <span class="comment"># 2 次乘 + 1 次加</span>
+<span class="comment"># 合计: 4 次乘 + 2 次加减</span></pre>
+        </div>
+        <div>
+          <h4 style="color:var(--pink)">复数形式展开</h4>
+<pre style="font-size:12px;margin:8px 0">
+<span class="comment"># (q1 + q2·i) × (cos + sin·i)</span>
+<span class="comment"># = q1·cos + q1·sin·i</span>
+<span class="comment">#   + q2·cos·i + q2·sin·i²</span>
+<span class="comment"># = (q1·cos - q2·sin)     ← 实部</span>
+<span class="comment">#   + (q1·sin + q2·cos)·i ← 虚部</span>
+
+<span class="comment"># 合计: 同样 4 次乘 + 2 次加减</span></pre>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary)">复数乘法只是把同样的 4 次乘法"包装"在一个运算符里，CPU/GPU 底层执行的指令完全一样。</p>
+    </div>
+  </details>
+
+  <details style="margin-top:8px;border-color:var(--purple)">
+    <summary style="font-size:13px">展开：代码对比——复数形式为什么更简洁</summary>
+    <div class="detail-content">
+      <div class="comparison">
+        <div>
+          <h4 style="color:var(--red)">实数版本 (6 行)</h4>
+<pre style="font-size:12px;margin:8px 0">
+<span class="comment"># 拆分、计算、拼接</span>
+x1 = x[..., :hd<span class="num">//2</span>]
+x2 = x[..., hd<span class="num">//2</span>:]
+o1 = x1*cos - x2*sin
+o2 = x1*sin + x2*cos
+out = torch.cat([o1, o2], -<span class="num">1</span>)</pre>
+        </div>
+        <div>
+          <h4 style="color:var(--green)">复数版本 (3 行)</h4>
+<pre style="font-size:12px;margin:8px 0">
+<span class="comment"># reshape → 乘 → reshape back</span>
+xc = view_as_complex(
+    x.reshape(*x.shape[:-<span class="num">1</span>],-<span class="num">1</span>,<span class="num">2</span>))
+out = view_as_real(
+    xc * freqs_cis).flatten(-<span class="num">2</span>)</pre>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary)">复数版本无需手动拆分和拼接索引，更不容易出错，也更容易被编译器/JIT 优化为单个融合 kernel。这就是 LLaMA、Qwen 等主流实现选择复数形式的原因。</p>
+    </div>
+  </details>
 </div>
 
 <div id="math-qk"></div>
 <h3>3.4 Q·K 内积：相对位置的数学证明</h3>
 
-<p>现在来证明为什么 RoPE 能编码<strong>相对位置</strong>。设位置 <span class="math-inline">m</span> 的 Query 和位置 <span class="math-inline">n</span> 的 Key：</p>
+<p>现在来证明为什么 RoPE 能编码<strong>相对位置</strong>。设位置 \(m\) 的 Query 和位置 \(n\) 的 Key，目标是证明：</p>
 
 <div class="math-block">
-  <div class="equation" style="text-align:left;padding-left:40px;">
-    &langle; q'<sub>m</sub>, k'<sub>n</sub> &rangle;<br>
-    = &langle; R(m&theta;) q, R(n&theta;) k &rangle;<br>
-    = qᵀ R(m&theta;)ᵀ R(n&theta;) k<br>
-    = qᵀ R(&minus;m&theta;) R(n&theta;) k &nbsp;&nbsp;&nbsp; <span style="color:var(--text-muted);font-size:14px">(正交矩阵性质)</span><br>
-    = qᵀ R((n &minus; m)&theta;) k &nbsp;&nbsp;&nbsp; <span style="color:var(--text-muted);font-size:14px">(旋转可加性)</span><br>
-    = <strong style="color:var(--green)">g(q, k, n &minus; m)</strong> &nbsp;&nbsp;&nbsp; <span style="color:var(--green);font-size:14px">只依赖相对距离！</span>
-  </div>
+  \[\langle R(m\theta)\,q,\; R(n\theta)\,k \rangle = \langle R((m-n)\theta)\,q,\; k \rangle\]
+  <span class="label">内积只依赖相对距离 \((m-n)\)，而非绝对位置 \(m\) 或 \(n\)</span>
 </div>
 
-<div class="info-box green">
+<details>
+  <summary>展开完整推导（4 步）</summary>
+  <div class="detail-content">
+
+    <p style="margin-bottom:18px;color:var(--text-secondary);font-size:14px">
+      推导依赖旋转矩阵的两个核心性质：
+      <strong>正交性</strong> \(R(\alpha)^{-1} = R(\alpha)^\top = R(-\alpha)\)，以及
+      <strong>可加性</strong> \(R(\alpha) R(\beta) = R(\alpha+\beta)\)。
+    </p>
+
+    <!-- Step 1 -->
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+      <div style="min-width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">1</div>
+      <div style="flex:1">
+        <p style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)">内积 → 转置形式</p>
+        <div class="math-block" style="margin:0;text-align:left;padding:14px 20px;">
+          \[\begin{aligned}
+          &\langle R(m\theta)\,q,\; R(n\theta)\,k \rangle \\
+          &= \bigl[R(m\theta)\,q\bigr]^\top \bigl[R(n\theta)\,k\bigr] \\
+          &= q^T R(m\theta)^\top R(n\theta)\,k
+          \end{aligned}\]
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:6px">内积写成矩阵转置形式，把两个旋转矩阵分离出来。</p>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+      <div style="min-width:28px;height:28px;border-radius:50%;background:var(--pink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">2</div>
+      <div style="flex:1">
+        <p style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)">正交性：R(&alpha;)ᵀ = R(&minus;&alpha;)</p>
+        <div class="math-block" style="margin:0;text-align:left;padding:14px 20px;">
+          \[= q^T \textcolor{#e64980}{R(-m\theta)}\, R(n\theta)\,k\]
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:6px">
+          旋转矩阵是正交矩阵：\(R(\theta)^\top R(\theta) = I\)，故 \(R(\theta)^\top = R(\theta)^{-1} = R(-\theta)\)。<br>
+          因此 \(R(m\theta)^\top\) 直接替换为 \(R(-m\theta)\)。
+        </p>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+      <div style="min-width:28px;height:28px;border-radius:50%;background:var(--purple);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">3</div>
+      <div style="flex:1">
+        <p style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)">可加性：R(&alpha;)&thinsp;R(&beta;) = R(&alpha;+&beta;)</p>
+        <div class="math-block" style="margin:0;text-align:left;padding:14px 20px;">
+          \[= q^T \textcolor{#7048e8}{R((n-m)\theta)}\,k\]
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:6px">
+          \(R(-m\theta)\,R(n\theta) = R((-m+n)\theta) = R((n-m)\theta)\)。<br>
+          两次旋转合并为一次，角度直接相加。
+        </p>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;">
+      <div style="min-width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px;">4</div>
+      <div style="flex:1">
+        <p style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)">写回内积形式，整理符号</p>
+        <div class="math-block" style="margin:0;text-align:left;padding:14px 20px;">
+          \[\begin{aligned}
+          &= q^T \bigl[R((m-n)\theta)\bigr]^{-1} k \\
+          &= \bigl[R((m-n)\theta)\,q\bigr]^\top k \\
+          &= \textcolor{#2b8a3e}{\langle R((m-n)\theta)\,q,\; k \rangle}
+          \end{aligned}\]
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:6px">
+          \(R((n-m)\theta) = [R((m-n)\theta)]^{-1}\)，再将矩阵移到左侧向量上，即得目标等式。<br>
+          结果中 <strong>n、m 仅以差值 \((m-n)\) 出现</strong>，绝对位置消失。
+        </p>
+      </div>
+    </div>
+
+    <!-- Intuition box -->
+    <div class="info-box orange" style="margin-top:8px">
+      <div class="box-title">几何直觉：坐标系整体旋转</div>
+      <p>把整个坐标系逆向旋转 \(n\theta\)（乘以 \(R(-n\theta)\)）——夹角不变，内积不变。旋转后 k 回到原始方向，q 则变成 \(R((m-n)\theta)\,q\)，只携带两者的<strong>相对角度差</strong>，绝对位置 m、n 彻底抵消。</p>
+    </div>
+
+  </div>
+</details>
+
+<div class="info-box green" style="margin-top:16px">
   <div class="box-title">关键结论</div>
-  <p>经过 RoPE 旋转后，Q 和 K 的内积（即注意力分数）<strong>只是相对距离 (n&minus;m) 的函数</strong>。无论 token 在序列中的绝对位置如何，只要两个 token 之间的距离相同，它们的注意力分数就相同。</p>
+  <p>经过 RoPE 旋转后，Q 和 K 的内积（即注意力分数）<strong>只是相对距离 \((m-n)\) 的函数</strong>。无论 token 在序列中的绝对位置如何，只要两个 token 之间的距离相同，它们的注意力分数就相同。</p>
 </div>
 </section>
 
@@ -572,7 +760,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <div id="freq-base"></div>
 <h3>4.1 频率基底 &theta; 的设计</h3>
 
-<p>RoPE 的频率公式 <span class="math-inline">&theta;ᵢ = base⁻²⁽ⁱ⁻¹⁾/ᵈ</span> 的设计灵感来自<strong>原始 Transformer 的正弦位置编码</strong>，但有本质区别：</p>
+<p>RoPE 的频率公式 \(\theta_i = \text{base}^{-2(i-1)/d}\) 的设计灵感来自<strong>原始 Transformer 的正弦位置编码</strong>，但有本质区别：</p>
 
 <div class="comparison">
   <div>
@@ -675,9 +863,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <p><strong>增大 base 的直觉</strong>：base 越大，所有频率越低，旋转越慢。这意味着在更长的序列上，旋转角度的变化更加平缓，避免了高频维度"绕圈太多"导致的周期性混淆。</p>
 
 <div class="math-block">
-  <div class="equation">
-    base &uarr; &nbsp;&rArr;&nbsp; &theta;<sub>i</sub> &darr; &nbsp;&rArr;&nbsp; 每个位置的旋转角度更小 &nbsp;&rArr;&nbsp; 可表示更长序列
-  </div>
+  \[\text{base} \uparrow \;\Rightarrow\; \theta_i \downarrow \;\Rightarrow\; \text{每个位置的旋转角度更小} \;\Rightarrow\; \text{可表示更长序列}\]
 </div>
 </section>
 
@@ -707,7 +893,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <details>
   <summary>远距离衰减的直觉解释</summary>
   <div class="detail-content">
-    <p>当两个 token 距离较远时，每个维度对的旋转角度差 <span class="math-inline">(m-n)&theta;ᵢ</span> 都很大。高频维度的 cos 值会剧烈振荡、正负抵消，使得这些维度对内积的贡献趋近于零。只有最低频的几个维度还能保持一致的方向。</p>
+    <p>当两个 token 距离较远时，每个维度对的旋转角度差 \((m-n)\theta_i\) 都很大。高频维度的 cos 值会剧烈振荡、正负抵消，使得这些维度对内积的贡献趋近于零。只有最低频的几个维度还能保持一致的方向。</p>
     <p>这产生了一种<strong>天然的局部性偏好</strong>：近距离 token 对的内积更大（更多维度"对齐"），远距离 token 对的内积更小。这与语言中"近处的词通常更相关"的先验一致。</p>
   </div>
 </details>
@@ -715,103 +901,364 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 
 <!-- ==================== 6. 代码实现 ==================== -->
 <section id="code">
-<h2>6. 代码实现</h2>
+<h2>6. 代码实现（源自 Hugging Face Transformers）</h2>
 
-<p>以下是 RoPE 的 PyTorch 实现，基于 LLaMA 的风格，逐步分解。</p>
+<p>以下代码<strong>直接提炼自</strong> Hugging Face Transformers 仓库中 LLaMA 模型的真实实现，而非自行编写的示例。源码分布在三个文件中：</p>
+
+<table>
+  <thead><tr><th>文件</th><th>职责</th></tr></thead>
+  <tbody>
+    <tr><td><code>modeling_rope_utils.py</code></td><td>频率计算工厂：根据 rope_type 分派不同的 inv_freq 计算方式</td></tr>
+    <tr><td><code>models/llama/modeling_llama.py</code></td><td>LlamaRotaryEmbedding 类 + rotate_half / apply_rotary_pos_emb</td></tr>
+    <tr><td><code>models/llama/configuration_llama.py</code></td><td>LlamaConfig，定义 rope_parameters 默认值</td></tr>
+  </tbody>
+</table>
 
 <div id="code-precompute"></div>
-<h3>6.1 预计算频率表 (freqs_cis)</h3>
+<h3>6.1 频率计算：compute_default_rope_parameters</h3>
+
+<p>在 <code>LlamaRotaryEmbedding.__init__</code> 中，如果 <code>rope_type == "default"</code>，则调用下面这个静态方法来计算逆频率 <code>inv_freq</code>：</p>
 
 <pre>
-<span class="kw">import</span> torch
+<span class="comment"># 源码: models/llama/modeling_llama.py — LlamaRotaryEmbedding 类 (L73-120)</span>
 
-<span class="kw">def</span> <span class="fn">precompute_freqs_cis</span>(dim: <span class="fn">int</span>, seq_len: <span class="fn">int</span>, base: <span class="fn">float</span> = <span class="num">10000.0</span>):
-    <span class="comment"># 计算每个维度对的频率: theta_i = 1 / base^(2i/d)</span>
-    freqs = <span class="num">1.0</span> / (base ** (torch.arange(<span class="num">0</span>, dim, <span class="num">2</span>).float() / dim))
-        <span class="comment"># <span class="shape">[d/2]</span> — 从高频到低频的频率序列</span>
+<span class="kw">class</span> <span class="fn">LlamaRotaryEmbedding</span>(nn.Module):
+    inv_freq: torch.Tensor  <span class="comment"># fix linting for `register_buffer`</span>
 
-    <span class="comment"># 位置序列: [0, 1, 2, ..., seq_len-1]</span>
-    t = torch.arange(seq_len).float()
-        <span class="comment"># <span class="shape">[seq_len]</span></span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, config: LlamaConfig, device=<span class="kw">None</span>):
+        <span class="kw">super</span>().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
+        self.config = config
 
-    <span class="comment"># 外积: 每个位置 × 每个频率 = 旋转角度矩阵</span>
-    angles = torch.outer(t, freqs)
-        <span class="comment"># <span class="shape">[seq_len, d/2]</span> — angles[m][i] = m * theta_i</span>
+        <span class="comment"># 根据 rope_type 选择频率初始化函数</span>
+        self.rope_type = self.config.rope_parameters[<span class="str">"rope_type"</span>]
+        rope_init_fn: Callable = self.compute_default_rope_parameters
+        <span class="kw">if</span> self.rope_type != <span class="str">"default"</span>:
+            <span class="comment"># 非默认类型 → 从全局注册表中取 (linear/dynamic/yarn/longrope/llama3)</span>
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config, device)
 
-    <span class="comment"># 转为复数形式: e^(i*angle) = cos(angle) + i*sin(angle)</span>
-    freqs_cis = torch.polar(torch.ones_like(angles), angles)
-        <span class="comment"># <span class="shape">[seq_len, d/2]</span> — 复数张量，每个元素在单位圆上</span>
+        <span class="comment"># 将 inv_freq 注册为非持久化 buffer（不会被 state_dict 保存）</span>
+        self.register_buffer(<span class="str">"inv_freq"</span>, inv_freq, persistent=<span class="kw">False</span>)
+        self.register_buffer(<span class="str">"original_inv_freq"</span>, inv_freq.clone(), persistent=<span class="kw">False</span>)
 
-    <span class="kw">return</span> freqs_cis
+    <span class="comment"># ── 默认频率计算 ──</span>
+    @staticmethod
+    <span class="kw">def</span> <span class="fn">compute_default_rope_parameters</span>(
+        config: LlamaConfig | <span class="kw">None</span> = <span class="kw">None</span>,
+        device=<span class="kw">None</span>, seq_len: <span class="fn">int</span> | <span class="kw">None</span> = <span class="kw">None</span>,
+    ) -> <span class="fn">tuple</span>[torch.Tensor, <span class="fn">float</span>]:
+        base = config.rope_parameters[<span class="str">"rope_theta"</span>]        <span class="comment"># 默认 10000.0</span>
+        dim = <span class="kw">getattr</span>(config, <span class="str">"head_dim"</span>, <span class="kw">None</span>) \
+              <span class="kw">or</span> config.hidden_size // config.num_attention_heads
+            <span class="comment"># <span class="dim">LLaMA-2-7B: 4096 // 32 = 128</span></span>
+
+        attention_factor = <span class="num">1.0</span>  <span class="comment"># 默认 RoPE 不做注意力缩放</span>
+
+        <span class="comment"># 核心公式: inv_freq[i] = 1 / base^(2i/d)</span>
+        inv_freq = <span class="num">1.0</span> / (
+            base ** (torch.arange(<span class="num">0</span>, dim, <span class="num">2</span>, dtype=torch.int64)
+                     .to(device=device, dtype=torch.float) / dim)
+        )
+            <span class="comment"># <span class="shape">[head_dim/2]</span> — 从高频到低频的逆频率序列</span>
+            <span class="comment"># 例: dim=128 → <span class="shape">[64]</span></span>
+            <span class="comment"># inv_freq[0]  = 1/10000^(0/128)   = 1.0       (最高频)</span>
+            <span class="comment"># inv_freq[1]  = 1/10000^(2/128)    ≈ 0.7499</span>
+            <span class="comment"># inv_freq[63] = 1/10000^(126/128)  ≈ 0.000107  (最低频)</span>
+        <span class="kw">return</span> inv_freq, attention_factor
 </pre>
 
 <table class="shape-flow">
   <thead><tr><th>步骤</th><th>操作</th><th>输出 Shape</th><th>说明</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td class="op">arange(0, d, 2) / d</td><td class="tensor-shape">[d/2]</td><td>归一化维度索引</td></tr>
-    <tr><td>2</td><td class="op">base ** (-indices)</td><td class="tensor-shape">[d/2]</td><td>频率 &theta;ᵢ = base⁻²ⁱ/ᵈ</td></tr>
-    <tr><td>3</td><td class="op">outer(positions, freqs)</td><td class="tensor-shape">[seq_len, d/2]</td><td>旋转角度矩阵</td></tr>
-    <tr><td>4</td><td class="op">polar(1, angles)</td><td class="tensor-shape">[seq_len, d/2]</td><td>复数旋转因子 e<sup>imθᵢ</sup></td></tr>
+    <tr><td>1</td><td class="op">arange(0, dim, 2) / dim</td><td class="tensor-shape">[head_dim/2]</td><td>归一化维度索引: [0/d, 2/d, 4/d, …]</td></tr>
+    <tr><td>2</td><td class="op">base ** (-indices)</td><td class="tensor-shape">[head_dim/2]</td><td>逆频率 inv_freq[i] = base<sup>−2i/d</sup></td></tr>
+    <tr><td>3</td><td class="op">register_buffer</td><td>—</td><td>存为模块 buffer，forward 中使用</td></tr>
+  </tbody>
+</table>
+
+<div class="info-box">
+  <div class="box-title">📁 频率工厂注册表 (modeling_rope_utils.py)</div>
+  <p>对于非 default 类型，频率计算由 <code>ROPE_INIT_FUNCTIONS</code> 字典分派：</p>
+<pre style="margin:8px 0;font-size:12px">
+<span class="comment"># 源码: modeling_rope_utils.py (L632-639)</span>
+ROPE_INIT_FUNCTIONS = {
+    <span class="str">"linear"</span>:      _compute_linear_scaling_rope_parameters,
+    <span class="str">"dynamic"</span>:     _compute_dynamic_ntk_parameters,
+    <span class="str">"yarn"</span>:        _compute_yarn_parameters,
+    <span class="str">"longrope"</span>:    _compute_longrope_parameters,
+    <span class="str">"llama3"</span>:      _compute_llama3_parameters,
+    <span class="str">"proportional"</span>: _compute_proportional_rope_parameters,
+}
+</pre>
+  <p style="font-size:13px">所有函数共享相同签名 <code>(config, device, seq_len, layer_type) → (inv_freq, attention_factor)</code>，模型无需关心具体缩放策略。</p>
+</div>
+
+<h3>6.1.1 RotaryEmbedding.forward：角度矩阵 → cos/sin</h3>
+
+<p><code>inv_freq</code> 预计算后存为 buffer，<code>forward</code> 每次被调用时根据 <code>position_ids</code> 算出实际的 cos/sin 值：</p>
+
+<pre>
+<span class="comment"># 源码: models/llama/modeling_llama.py — LlamaRotaryEmbedding.forward (L122-135)</span>
+
+    @torch.no_grad()
+    @dynamic_rope_update  <span class="comment"># 装饰器：若 rope_type 含 "dynamic"，先更新 inv_freq</span>
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, position_ids):
+        <span class="comment"># inv_freq: <span class="shape">[head_dim/2]</span></span>
+        <span class="comment"># position_ids: <span class="shape">[batch, seq_len]</span></span>
+
+        <span class="comment"># 扩展为可做批量矩阵乘法的形状</span>
+        inv_freq_expanded = self.inv_freq[<span class="kw">None</span>, :, <span class="kw">None</span>].float() \
+            .expand(position_ids.shape[<span class="num">0</span>], -<span class="num">1</span>, <span class="num">1</span>).to(x.device)
+            <span class="comment"># <span class="shape">[batch, head_dim/2, 1]</span></span>
+        position_ids_expanded = position_ids[:, <span class="kw">None</span>, :].float()
+            <span class="comment"># <span class="shape">[batch, 1, seq_len]</span></span>
+
+        <span class="comment"># 核心：矩阵乘法计算所有 (位置, 维度对) 的旋转角度</span>
+        <span class="kw">with</span> maybe_autocast(device_type=..., enabled=<span class="kw">False</span>):  <span class="comment"># 强制 float32</span>
+            freqs = (inv_freq_expanded.float()
+                     @ position_ids_expanded.float()).transpose(<span class="num">1</span>, <span class="num">2</span>)
+                <span class="comment"># <span class="shape">[batch, head_dim/2, 1]</span> @ <span class="shape">[batch, 1, seq_len]</span></span>
+                <span class="comment"># → <span class="shape">[batch, head_dim/2, seq_len]</span> → transpose → <span class="shape">[batch, seq_len, head_dim/2]</span></span>
+                <span class="comment"># freqs[b][m][i] = position_ids[b][m] × inv_freq[i] = m·θᵢ</span>
+
+            emb = torch.cat((freqs, freqs), dim=-<span class="num">1</span>)
+                <span class="comment"># <span class="shape">[batch, seq_len, head_dim]</span> — 沿最后维度复制一份，供 rotate_half 使用</span>
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+                <span class="comment"># <span class="shape">[batch, seq_len, head_dim]</span></span>
+
+        <span class="kw">return</span> cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+</pre>
+
+<table class="shape-flow">
+  <thead><tr><th>步骤</th><th>操作</th><th>Shape 变化</th><th>数学含义</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="op">inv_freq[None, :, None]</td><td><span class="tensor-shape">[1, d/2, 1]</span></td><td>准备做 batch matmul</td></tr>
+    <tr><td>2</td><td class="op">position_ids[:, None, :]</td><td><span class="tensor-shape">[B, 1, S]</span></td><td>位置序列</td></tr>
+    <tr><td>3</td><td class="op">matmul + transpose</td><td><span class="tensor-shape">[B, S, d/2]</span></td><td>freqs[m][i] = m · θᵢ</td></tr>
+    <tr><td>4</td><td class="op">cat((freqs, freqs))</td><td><span class="tensor-shape">[B, S, d]</span></td><td>复制一份以匹配 head_dim</td></tr>
+    <tr><td>5</td><td class="op">.cos() / .sin()</td><td><span class="tensor-shape">[B, S, d]</span></td><td>最终的旋转因子</td></tr>
   </tbody>
 </table>
 
 <div id="code-apply"></div>
-<h3>6.2 应用旋转到 Q/K</h3>
+<h3>6.2 应用旋转到 Q/K：rotate_half + apply_rotary_pos_emb</h3>
+
+<p>Transformers 中 LLaMA 的实现<strong>不使用复数运算</strong>，而是用纯实数的 <code>rotate_half</code> 技巧。这是工业界最主流的实现方式：</p>
 
 <pre>
-<span class="kw">def</span> <span class="fn">apply_rotary_emb</span>(
-    q: torch.Tensor,     <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
-    k: torch.Tensor,     <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim]</span></span>
-    freqs_cis: torch.Tensor  <span class="comment"># <span class="shape">[seq_len, head_dim/2]</span></span>
-):
-    <span class="comment"># 将实数张量视为复数: 相邻两个元素组成一个复数</span>
-    q_complex = torch.view_as_complex(q.float().reshape(*q.shape[:-<span class="num">1</span>], -<span class="num">1</span>, <span class="num">2</span>))
-        <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim/2]</span> complex64</span>
-    k_complex = torch.view_as_complex(k.float().reshape(*k.shape[:-<span class="num">1</span>], -<span class="num">1</span>, <span class="num">2</span>))
-        <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim/2]</span> complex64</span>
+<span class="comment"># 源码: models/llama/modeling_llama.py (L138-168)</span>
 
-    <span class="comment"># 广播 freqs_cis 到 [1, seq_len, 1, head_dim/2]</span>
-    freqs = freqs_cis.unsqueeze(<span class="num">0</span>).unsqueeze(<span class="num">2</span>)
+<span class="kw">def</span> <span class="fn">rotate_half</span>(x):
+    <span class="str">"""Rotates half the hidden dims of the input."""</span>
+    x1 = x[..., : x.shape[-<span class="num">1</span>] // <span class="num">2</span>]    <span class="comment"># 前半: q₁, q₂, ..., q_{d/2}</span>
+    x2 = x[..., x.shape[-<span class="num">1</span>] // <span class="num">2</span> :]    <span class="comment"># 后半: q_{d/2+1}, ..., q_d</span>
+    <span class="kw">return</span> torch.cat((-x2, x1), dim=-<span class="num">1</span>)
+    <span class="comment"># 输出: [-q_{d/2+1}, ..., -q_d, q₁, ..., q_{d/2}]</span>
+    <span class="comment"># 本质: 每对 (qᵢ, q_{i+d/2}) 做 90° 旋转 → (-q_{i+d/2}, qᵢ)</span>
 
-    <span class="comment"># 核心操作：复数逐元素乘法 = 旋转！</span>
-    q_rotated = q_complex * freqs    <span class="comment"># <span class="shape">[b, s, nh, hd/2]</span> 复数乘法</span>
-    k_rotated = k_complex * freqs    <span class="comment"># <span class="shape">[b, s, nkv, hd/2]</span></span>
 
-    <span class="comment"># 转回实数张量</span>
-    q_out = torch.view_as_real(q_rotated).flatten(-<span class="num">2</span>)
-        <span class="comment"># <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
-    k_out = torch.view_as_real(k_rotated).flatten(-<span class="num">2</span>)
-        <span class="comment"># <span class="shape">[batch, seq_len, n_kv_heads, head_dim]</span></span>
+<span class="kw">def</span> <span class="fn">apply_rotary_pos_emb</span>(q, k, cos, sin, unsqueeze_dim=<span class="num">1</span>):
+    <span class="str">"""Applies Rotary Position Embedding to the query and key tensors."""</span>
+    <span class="comment"># q, k: <span class="shape">[batch, n_heads, seq_len, head_dim]</span></span>
+    <span class="comment"># cos, sin: <span class="shape">[batch, seq_len, head_dim]</span></span>
+    cos = cos.unsqueeze(unsqueeze_dim)  <span class="comment"># → <span class="shape">[batch, 1, seq_len, head_dim]</span></span>
+    sin = sin.unsqueeze(unsqueeze_dim)  <span class="comment"># → <span class="shape">[batch, 1, seq_len, head_dim]</span> (广播到所有 head)</span>
 
-    <span class="kw">return</span> q_out.type_as(q), k_out.type_as(k)
+    <span class="comment"># 核心旋转公式（等价于 2×2 旋转矩阵 × 向量对）</span>
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    <span class="kw">return</span> q_embed, k_embed
 </pre>
 
-<div class="info-box">
-  <div class="box-title">核心操作只有一行</div>
-  <p><code>q_rotated = q_complex * freqs</code> — 复数乘法自动完成了旋转！</p>
-  <p>这等价于：对每对 (q₂ᵢ₋₁, q₂ᵢ)，执行 2&times;2 旋转矩阵乘法。但复数乘法更快、更简洁。</p>
+<details>
+  <summary>🔍 展开：为什么 <code>q * cos + rotate_half(q) * sin</code> 等价于旋转矩阵？</summary>
+  <div class="detail-content">
+    <p>对于一对元素 \((q_i, q_{i+d/2})\)，<code>rotate_half</code> 会将它们变为 \((-q_{i+d/2}, q_i)\)。代入公式：</p>
+    <div class="math-block" style="text-align:left;padding-left:20px;">
+      \[\begin{aligned}
+      q'_i       &= q_i \cdot \cos(m\theta) + (-q_{i+d/2}) \cdot \sin(m\theta)
+                  = q_i \cos(m\theta) - q_{i+d/2} \sin(m\theta) \\
+      q'_{i+d/2} &= q_{i+d/2} \cdot \cos(m\theta) + q_i \cdot \sin(m\theta)
+                  = q_i \sin(m\theta) + q_{i+d/2} \cos(m\theta)
+      \end{aligned}\]
+    </div>
+    <p>这正是 2&times;2 旋转矩阵 \(\begin{pmatrix}\cos\theta & -\sin\theta \\ \sin\theta & \cos\theta\end{pmatrix}\) 作用在 \((q_i, q_{i+d/2})\) 上的结果。</p>
+    <p style="color:var(--text-muted);font-size:13px"><strong>注意</strong>：LLaMA 的配对方式是"前半 + 后半"（即 \(q_i\) 与 \(q_{i+d/2}\) 配对），而非"相邻配对"（\(q_{2i-1}\) 与 \(q_{2i}\)）。两种方式数学上等价，只要 cos/sin 的排列与之一致。</p>
+  </div>
+</details>
+
+<div class="info-box green">
+  <div class="box-title">在 Attention 中的调用位置</div>
+  <p>在 <code>LlamaAttention.forward</code> 中，RoPE 在线性投影<strong>之后</strong>、KV 缓存更新<strong>之前</strong>应用：</p>
+<pre style="margin:8px 0;font-size:12px">
+<span class="comment"># 源码: models/llama/modeling_llama.py — LlamaAttention.forward (L262-270)</span>
+
+<span class="comment"># 1. 线性投影</span>
+query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(<span class="num">1</span>, <span class="num">2</span>)
+key_states   = self.k_proj(hidden_states).view(hidden_shape).transpose(<span class="num">1</span>, <span class="num">2</span>)
+value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(<span class="num">1</span>, <span class="num">2</span>)
+
+<span class="comment"># 2. 应用 RoPE（cos, sin 来自 LlamaModel 中的 self.rotary_emb）</span>
+cos, sin = position_embeddings
+query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+<span class="comment"># 3. 更新 KV 缓存（RoPE 后的 key 被缓存）</span>
+<span class="kw">if</span> past_key_values <span class="kw">is not None</span>:
+    key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+</pre>
+  <p style="font-size:13px">注意：<strong>Value 不参与旋转</strong>——RoPE 只影响 Q 和 K 的内积（注意力分数），不改变 Value 的聚合方式。</p>
 </div>
 
 <div id="code-full"></div>
 
-<details>
-  <summary>6.3 不使用复数的实数版本 (展开形式)</summary>
-  <div class="detail-content">
-    <p>有些框架不支持复数运算，可以用纯实数实现：</p>
+<h3>6.3 频率初始化在模型中的调用链</h3>
+
+<p>完整的调用链如下，从 <code>LlamaModel.__init__</code> 开始：</p>
+
+<div class="step-flow">
+  <div class="step-item"><div class="step-num">LlamaModel</div><div class="step-text">self.rotary_emb = LlamaRotaryEmbedding(config)</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">__init__</div><div class="step-text">compute_default_rope_parameters()</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">register_buffer</div><div class="step-text">inv_freq: [head_dim/2]</div></div>
+</div>
+<div class="step-flow" style="margin-top:8px">
+  <div class="step-item"><div class="step-num">每次 forward</div><div class="step-text">rotary_emb(x, position_ids)</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">matmul</div><div class="step-text">freqs = inv_freq @ positions</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item"><div class="step-num">cos/sin</div><div class="step-text">(cos, sin) 传给每层</div></div>
+  <span class="step-arrow">&rarr;</span>
+  <div class="step-item" style="border-color:var(--accent);background:var(--accent-light)"><div class="step-num">Attention</div><div class="step-text" style="color:var(--accent)">apply_rotary_pos_emb(q, k, cos, sin)</div></div>
+</div>
+
 <pre>
-<span class="kw">def</span> <span class="fn">apply_rotary_emb_real</span>(x, freqs_cos, freqs_sin):
-    <span class="comment"># x: <span class="shape">[batch, seq_len, n_heads, head_dim]</span></span>
-    <span class="comment"># 将 head_dim 拆分为两半</span>
-    x1 = x[..., : x.shape[-<span class="num">1</span>] // <span class="num">2</span>]   <span class="comment"># 偶数维度</span>
-    x2 = x[..., x.shape[-<span class="num">1</span>] // <span class="num">2</span> :]   <span class="comment"># 奇数维度</span>
+<span class="comment"># 源码: models/llama/modeling_llama.py — LlamaModel (L355-408)</span>
 
-    <span class="comment"># 旋转公式: [cos, -sin; sin, cos] * [x1, x2]</span>
-    out1 = x1 * freqs_cos - x2 * freqs_sin
-    out2 = x1 * freqs_sin + x2 * freqs_cos
+<span class="kw">class</span> <span class="fn">LlamaModel</span>(LlamaPreTrainedModel):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, config: LlamaConfig):
+        ...
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, ...)
+        self.layers = nn.ModuleList(
+            [LlamaDecoderLayer(config, layer_idx) <span class="kw">for</span> layer_idx <span class="kw">in</span> <span class="fn">range</span>(config.num_hidden_layers)]
+        )
+        self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = LlamaRotaryEmbedding(config=config)  <span class="comment"># ← 创建 RoPE 模块</span>
 
-    <span class="kw">return</span> torch.cat([out1, out2], dim=-<span class="num">1</span>)
+    <span class="kw">def</span> <span class="fn">forward</span>(self, input_ids, ..., position_ids, ...):
+        ...
+        hidden_states = self.embed_tokens(input_ids)
+
+        <span class="comment"># 一次性计算所有层共享的 cos/sin</span>
+        position_embeddings = self.rotary_emb(hidden_states, position_ids=position_ids)
+            <span class="comment"># → (cos, sin), 各 <span class="shape">[batch, seq_len, head_dim]</span></span>
+
+        <span class="kw">for</span> decoder_layer <span class="kw">in</span> self.layers:
+            hidden_states = decoder_layer(
+                hidden_states,
+                position_embeddings=position_embeddings,  <span class="comment"># ← 传递给每一层</span>
+                ...
+            )
+        ...
 </pre>
-    <p>注意：这里将向量的<strong>前半和后半</strong>分别当作 "实部" 和 "虚部"，与将<strong>相邻元素</strong>配对的方式等价（只要保持一致即可）。</p>
+
+<div class="info-box purple">
+  <div class="box-title">设计亮点：所有层共享 cos/sin</div>
+  <p><code>rotary_emb</code> 定义在 <code>LlamaModel</code>（而非每个 <code>LlamaDecoderLayer</code>），cos/sin 只计算一次后传递给所有层。这是因为 RoPE 的旋转角度<strong>只取决于位置和维度索引</strong>，与层无关。</p>
+</div>
+
+<details>
+  <summary>6.4 完整数据流：从 token 到旋转后的注意力分数</summary>
+  <div class="detail-content">
+    <p>以 LLaMA-2-7B 为例（<code>hidden_size=4096</code>, <code>num_heads=32</code>, <code>head_dim=128</code>），对一个 batch_size=1, seq_len=10 的输入：</p>
+    <table>
+      <thead><tr><th>阶段</th><th>张量</th><th>Shape</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td>输入</td><td>input_ids</td><td class="tensor-shape">[1, 10]</td><td>—</td></tr>
+        <tr><td>嵌入</td><td>hidden_states</td><td class="tensor-shape">[1, 10, 4096]</td><td>embed_tokens</td></tr>
+        <tr><td>RoPE 预计算</td><td>inv_freq</td><td class="tensor-shape">[64]</td><td>buffer, 只算一次</td></tr>
+        <tr><td>RoPE forward</td><td>cos, sin</td><td class="tensor-shape">[1, 10, 128]</td><td>inv_freq @ position_ids → cos/sin</td></tr>
+        <tr><td>线性投影</td><td>Q, K</td><td class="tensor-shape">[1, 32, 10, 128]</td><td>q_proj, k_proj + reshape + transpose</td></tr>
+        <tr><td style="color:var(--accent);font-weight:600">应用 RoPE</td><td>Q', K'</td><td class="tensor-shape">[1, 32, 10, 128]</td><td>q*cos + rotate_half(q)*sin</td></tr>
+        <tr><td>注意力</td><td>scores</td><td class="tensor-shape">[1, 32, 10, 10]</td><td>Q' · K'ᵀ / √d — 已含相对位置信息</td></tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>6.5 Cohere 变体：交替配对 (interleave) 方式</summary>
+  <div class="detail-content">
+    <p>值得注意的是，不同模型对 head_dim 的<strong>配对方式</strong>不同。Cohere 模型使用"相邻元素交替配对"，而非 LLaMA 的"前半/后半"配对：</p>
+<pre style="font-size:12px">
+<span class="comment"># 源码: models/cohere/modular_cohere.py (L69-91)</span>
+
+<span class="comment"># Cohere 的 RotaryEmbedding：用 repeat_interleave 代替 cat</span>
+<span class="kw">class</span> <span class="fn">CohereRotaryEmbedding</span>(LlamaRotaryEmbedding):
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, position_ids):
+        ...
+        freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(<span class="num">1</span>, <span class="num">2</span>)
+        emb = torch.repeat_interleave(freqs, <span class="num">2</span>, dim=-<span class="num">1</span>)  <span class="comment"># ← 关键区别！</span>
+        <span class="comment"># LLaMA: cat((freqs, freqs))   → [θ₁,θ₂,...,θ₁,θ₂,...]</span>
+        <span class="comment"># Cohere: repeat_interleave(2) → [θ₁,θ₁,θ₂,θ₂,θ₃,θ₃,...]</span>
+        ...
+
+<span class="comment"># Cohere 的 rotate_half：交替取元素</span>
+<span class="kw">def</span> <span class="fn">rotate_half</span>(x):
+    x1 = x[..., ::<span class="num">2</span>]           <span class="comment"># 偶数索引: q₀, q₂, q₄, ...</span>
+    x2 = x[..., <span class="num">1</span>::<span class="num">2</span>]          <span class="comment"># 奇数索引: q₁, q₃, q₅, ...</span>
+    rot_x = torch.stack([-x2, x1], dim=-<span class="num">1</span>).flatten(-<span class="num">2</span>)
+    <span class="kw">return</span> rot_x
+    <span class="comment"># 输出: [-q₁, q₀, -q₃, q₂, -q₅, q₄, ...]</span>
+    <span class="comment"># 配对方式: (q₀,q₁), (q₂,q₃), ... — 相邻元素配对</span>
+</pre>
+    <div class="comparison">
+      <div>
+        <h4 style="color:var(--accent)">LLaMA 方式</h4>
+        <p style="font-size:13px"><strong>前半/后半配对</strong></p>
+        <p style="font-size:12px">向量 [q₁ q₂ q₃ q₄ | q₅ q₆ q₇ q₈]</p>
+        <p style="font-size:12px">配对: (q₁,q₅) (q₂,q₆) (q₃,q₇) (q₄,q₈)</p>
+        <p style="font-size:12px">cos/sin 布局: cat((freqs, freqs))</p>
+      </div>
+      <div>
+        <h4 style="color:var(--pink)">Cohere 方式</h4>
+        <p style="font-size:13px"><strong>相邻元素配对</strong></p>
+        <p style="font-size:12px">向量 [q₁ q₂ | q₃ q₄ | q₅ q₆ | q₇ q₈]</p>
+        <p style="font-size:12px">配对: (q₁,q₂) (q₃,q₄) (q₅,q₆) (q₇,q₈)</p>
+        <p style="font-size:12px">cos/sin 布局: repeat_interleave(2)</p>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--text-secondary)">两种配对方式数学上<strong>完全等价</strong>（只是维度排列不同），但工程实现和 kernel 优化上各有取舍。LLaMA 的 cat 方式在大多数 GPU kernel 中更高效。</p>
+  </div>
+</details>
+
+<details>
+  <summary>6.6 进阶：Dynamic NTK 缩放（长度外推）的实际代码</summary>
+  <div class="detail-content">
+    <p>当 <code>rope_type="dynamic"</code> 时，<code>@dynamic_rope_update</code> 装饰器会在 forward 中自动检测是否需要更新 inv_freq：</p>
+<pre style="font-size:12px">
+<span class="comment"># 源码: modeling_rope_utils.py — _compute_dynamic_ntk_parameters (L257-324)</span>
+
+<span class="kw">def</span> <span class="fn">_compute_dynamic_ntk_parameters</span>(config, device, seq_len=<span class="kw">None</span>, ...):
+    base = rope_parameters_dict[<span class="str">"rope_theta"</span>]          <span class="comment"># 原始 base</span>
+    factor = rope_parameters_dict[<span class="str">"factor"</span>]
+    dim = <span class="fn">int</span>(head_dim * partial_rotary_factor)
+
+    <span class="comment"># 关键：根据当前序列长度动态调整 base</span>
+    base = base * (
+        (factor * seq_len / config.max_position_embeddings) - (factor - <span class="num">1</span>)
+    ) ** (dim / (dim - <span class="num">2</span>))
+    <span class="comment"># 当 seq_len > max_position_embeddings 时，base 增大 → 频率降低 → 旋转变慢</span>
+    <span class="comment"># 这就是 NTK-aware 缩放的核心公式（来自 Reddit 用户 /u/bloc97）</span>
+
+    inv_freq = <span class="num">1.0</span> / (base ** (torch.arange(<span class="num">0</span>, dim, <span class="num">2</span>, ...).float() / dim))
+    <span class="kw">return</span> inv_freq, attention_factor
+</pre>
+    <p style="font-size:13px">这对应第 4 节中的长度外推原理：<code>base ↑ → θᵢ ↓ → 每步旋转角更小 → 可表示更长序列</code>。</p>
   </div>
 </details>
 </section>
@@ -820,7 +1267,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 <section id="demo-rotation">
 <h2>7. 交互式 Demo：2D 旋转可视化</h2>
 
-<p>拖动滑块改变位置 <span class="math-inline">m</span>，观察向量如何随位置旋转。红色是 Query，蓝色是 Key。</p>
+<p>拖动滑块改变位置 \(m\)，观察向量如何随位置旋转。红色是 Query，蓝色是 Key。</p>
 
 <div class="demo-panel">
   <h4>2D 旋转演示</h4>
@@ -910,11 +1357,172 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
   <canvas id="dpCanvas" width="700" height="350" style="max-width:100%"></canvas>
   <p style="font-size:12px;color:var(--text-muted);text-align:center">横轴: 相对距离 |m-n|, 纵轴: 归一化内积 (每个距离取多次平均)</p>
 </div>
+
+<h3>这张图在说什么？</h3>
+
+<p>图中有两条线：<strong>蓝色实线</strong>是实际内积（快速振荡），<strong>粉色虚线</strong>是振幅包络（移动均值）。包络线总体向下——振荡越来越密集，但幅度越来越小。这个衰减是从旋转数学中"免费"得到的性质，无需任何额外设计。</p>
+
+<div class="math-block">
+  \[\langle R(d\,\theta)\,q,\; k \rangle \quad \xrightarrow{d \uparrow} \quad \text{振幅整体下降}\]
+  <span class="label">对任意随机 Q/K，内积的振荡幅度随相对距离 \(d = |m-n|\) 增大而整体衰减</span>
+</div>
+
+<h3>为什么会衰减？</h3>
+
+<p>RoPE 把 \(d\) 维向量分成 \(d/2\) 组，每组的旋转频率 \(\theta_i\) 不同：</p>
+
+<table>
+  <thead>
+    <tr><th>维度对</th><th>频率 \(\theta_i\)</th><th>距离为 \(d\) 时的旋转角</th><th>对内积的贡献</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>前几组（高频）</td>
+      <td style="color:var(--pink)">\(\approx 1.0\)</td>
+      <td>\(d \times 1.0\)，迅速绕满一圈</td>
+      <td style="color:var(--red)">正负交替，相互抵消</td>
+    </tr>
+    <tr>
+      <td>中间组</td>
+      <td style="color:var(--purple)">\(\approx 0.01\)</td>
+      <td>旋转较慢</td>
+      <td>部分有效</td>
+    </tr>
+    <tr>
+      <td>最后几组（低频）</td>
+      <td style="color:var(--teal)">\(\approx 10^{-4}\)</td>
+      <td>几乎不动</td>
+      <td style="color:var(--green)">方向保持一致，贡献稳定</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>当距离 \(d\) 增大时，高频维度的 \(\cos(d\,\theta_i)\) 快速正负交替并相互抵消，能"对齐"的维度越来越少，最终只有少数低频维度还能提供稳定的内积贡献——振幅包络因此持续下降。</p>
+
+<div class="info-box green">
+  <div class="box-title">天然的局部性偏好（Locality Bias）</div>
+  <p>这个衰减不需要像 ALiBi 那样手动加距离惩罚项——RoPE 从数学结构上就自然产生了：</p>
+  <ul style="margin-top:8px">
+    <li><strong>近距离 token 对</strong>：旋转角小，各维度方向对齐，内积大 → 注意力强</li>
+    <li><strong>远距离 token 对</strong>：高频维度快速振荡抵消，内积整体衰减 → 注意力弱</li>
+  </ul>
+  <p style="margin-top:8px">这与"近处的词通常更相关"的语言先验完全吻合，且是<strong>零额外参数</strong>实现的。</p>
+</div>
+
+<div class="info-box" style="margin-top:12px">
+  <div class="box-title">📌 在全文中的位置</div>
+  <p>第 5 节以"远距离衰减"作为 RoPE 四大优势之一给出了理论说明；本节用交互图给出<strong>经验验证</strong>——把抽象的 \(\cos\) 振荡分析变成可以拖动滑块亲眼看到的图形。尝试调大 <code>base</code>：更大的 base 使所有频率变低，衰减曲线会更平缓，也正是长度外推方案的核心思路。</p>
+</div>
 </section>
 
-<!-- ==================== 10. 变体 ==================== -->
+<!-- ==================== 10. attention_scaling 补偿 ==================== -->
+<section id="demo-attnscale">
+<h2>10. 交互式 Demo：attention_scaling 的外推补偿</h2>
+
+<p>上一节的内积衰减是 RoPE 的<strong>好</strong>性质。但当我们把上下文从 4K 外推到 128K 时，会出现一个<strong>坏</strong>副作用：query 要 attend 的 key 变多了，softmax 把概率质量摊薄到成百上千个背景 token 上，注意力分布变"钝"、熵升高，真正相关的 token 反而抢不到权重。<code>attention_scaling</code> 就是用来补偿这个副作用的。</p>
+
+<div class="info-box purple">
+  <div class="box-title">它在代码里长这样</div>
+  <p><code>self.attention_scaling</code>（RoPE 初始化函数返回的 <code>attention_factor</code>）是一个直接乘在 cos/sin 上的标量：</p>
+</div>
+
+<pre><span class="comment"># modeling_rope_utils.py — 初始化时由 rope_init_fn 返回</span>
+inv_freq, self.attention_scaling = rope_init_fn(config, device, ...)
+
+<span class="comment"># modeling_llama.py:132 — forward 中乘进 cos/sin</span>
+cos = emb.cos() * self.attention_scaling
+sin = emb.sin() * self.attention_scaling</pre>
+
+<p>由于 <code>apply_rotary_pos_emb</code> 里 query 和 key <strong>都</strong>用同一组 cos/sin 旋转，把 cos/sin 乘上因子 \(s\) 会让 \(q_{\text{embed}}\) 和 \(k_{\text{embed}}\) <strong>各</strong>放大 \(s\) 倍——两者都线性依赖 cos/sin。于是它们的内积被放大 \(s\times s = s^2\) 倍：<strong>attention logit \(q\!\cdot\!k\) 被整体放大 \(s^2\) 倍</strong>，效果等同于给 softmax 降温、把分布重新“锐化”。</p>
+
+<div class="math-block">
+  \[q_{\text{embed}}\cdot k_{\text{embed}} \;\longrightarrow\; (s\,q_{\text{embed}})\cdot(s\,k_{\text{embed}}) = s^2\,(q_{\text{embed}}\cdot k_{\text{embed}})\]
+  <span class="label">q、k 共用同一组被缩放的 cos/sin，各自放大 s 倍，故内积放大 s² 倍</span>
+</div>
+
+<div class="math-block">
+  \[\text{softmax}\big(s^2\cdot(q\!\cdot\!k)\big),\qquad s = \texttt{attention\_scaling} \ge 1\]
+  <span class="label">s 越大 → logit 差距被放大 (∝ s²) → softmax 越尖锐 → 熵越低</span>
+</div>
+
+<div class="info-box orange">
+  <div class="box-title">⚠️ 因此 attention_scaling 是"温度的平方根"</div>
+  <p>若想让 logit 得到温度因子 \(t\)（即 \(\text{softmax}(t\cdot q\!\cdot\!k)\)），需要设 <code>attention_scaling</code> \(=\sqrt{t}\)。YaRN 存下的 <code>attention_factor</code> 就是这个 \(s=\sqrt{t}\)，真正作用在注意力分数上的放大是 \(s^2\)。</p>
+</div>
+
+<div class="demo-panel">
+  <h4>拖动滑块：看外推如何"钝化"注意力，attention_scaling 如何"救回来"</h4>
+  <div class="slider-row">
+    <label>序列长度 N:</label>
+    <input type="range" id="asN" min="32" max="512" value="256" step="16">
+    <span class="val" id="asNVal">256</span>
+  </div>
+  <div class="slider-row">
+    <label>attention_scaling:</label>
+    <input type="range" id="asScale" min="100" max="220" value="100" step="5">
+    <span class="val" id="asScaleVal">1.00</span>
+  </div>
+  <div class="btn-group" style="justify-content:center">
+    <button class="btn" id="asYarnBtn" onclick="setYarnScale()">套用 YaRN 公式值</button>
+  </div>
+  <canvas id="asCanvas" width="700" height="360" style="max-width:100%"></canvas>
+  <div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:8px">
+    <div class="metric-card teal"><div class="metric-value" id="asPeak" style="font-size:20px">—</div><div class="metric-label">峰值注意力 (基线 → 缩放后)</div></div>
+    <div class="metric-card purple"><div class="metric-value" id="asEntropy" style="font-size:20px">—</div><div class="metric-label">分布熵 (基线 → 缩放后)</div></div>
+  </div>
+  <p style="font-size:12px;color:var(--text-muted);text-align:center">灰线 = 未缩放 (s=1) 的注意力分布；紫线 = 乘上 attention_scaling 后的分布。横轴为 key 位置，纵轴为 softmax 权重。</p>
+</div>
+
+<h3>怎么看这张图</h3>
+
+<ol style="color:var(--text-secondary)">
+  <li><strong>先拖大「序列长度 N」</strong>：保持 <code>attention_scaling = 1.00</code>。你会看到灰线的几个峰越来越矮——相关 token 的权重被越来越多的背景 token 稀释，右侧「峰值注意力」下降、「分布熵」升高。这就是长上下文外推带来的"注意力钝化"。</li>
+  <li><strong>再拖大「attention_scaling」</strong>：紫线的峰重新长高、变窄，熵回落。同样的 logits 被整体放大 \(s^2\) 倍（q、k 各乘 \(s\)），softmax 就重新把质量集中回了真正相关的位置。</li>
+  <li><strong>点「套用 YaRN 公式值」</strong>：按 \(s = 0.1\ln(\text{factor}) + 1\)（此处以 factor≈N/32 估算）自动设定缩放，观察它恰好把熵拉回接近短序列时的水平。</li>
+</ol>
+
+<div class="comparison">
+  <div>
+    <h4 style="color:var(--red)">没有 attention_scaling</h4>
+    <p style="font-size:13px">外推后 softmax 分母里多了成百上千个背景项</p>
+    <p style="font-size:13px;color:var(--red)">相关 token 权重被稀释，注意力"发散"</p>
+    <p style="font-size:13px;color:var(--red)">长文本上性能明显下降</p>
+  </div>
+  <div>
+    <h4 style="color:var(--green)">有 attention_scaling (s &gt; 1)</h4>
+    <p style="font-size:13px">logit 被放大 \(s^2\) 倍，等效于 softmax 降温</p>
+    <p style="font-size:13px;color:var(--green)">分布重新锐化，熵回到训练时水平</p>
+    <p style="font-size:13px;color:var(--green)">恢复长上下文下的检索能力</p>
+  </div>
+</div>
+
+<h3>各 RoPE 类型的取值</h3>
+
+<table>
+  <thead>
+    <tr><th>RoPE 类型</th><th>attention_factor</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>default / linear / dynamic</td><td style="color:var(--text-muted)">\(1.0\)</td><td>占位保持接口统一，乘上后 cos/sin 不变，无任何效果</td></tr>
+    <tr><td><strong>YaRN</strong></td><td style="color:var(--purple)">\(0.1\ln(\text{factor}) + 1.0\)</td><td>默认公式（<code>modeling_rope_utils.py:537</code>）；factor 为外推倍数</td></tr>
+    <tr><td><strong>Longrope / DeepSeek-YaRN</strong></td><td style="color:var(--purple)">\(\dfrac{\text{mscale}(\text{factor},\,m)}{\text{mscale}(\text{factor},\,m_{\text{all}})}\)</td><td>由 <code>mscale</code>、<code>mscale_all_dim</code> 推出（<code>:411-415</code>）</td></tr>
+  </tbody>
+</table>
+
+<div class="info-box green">
+  <div class="box-title">一句话</div>
+  <p><code>attention_scaling</code> 是长上下文外推时乘在 cos/sin 上的<strong>温度补偿因子</strong>：序列变长让 softmax 变钝，这个略大于 1 的标量把注意力重新锐化。default RoPE 下恒为 <code>1.0</code>（无效果），只有 YaRN、Longrope 等外推方法才会给它真正 &gt;1 的值。</p>
+</div>
+
+<div class="info-box" style="margin-top:12px">
+  <div class="box-title">📌 在全文中的位置</div>
+  <p>第 4.2 节讲的是<strong>改 base / 改频率</strong>来外推（作用在 <code>inv_freq</code> 上）；本节的 <code>attention_scaling</code> 是外推方案的<strong>另一半</strong>——它不改频率，而是缩放 cos/sin 的幅度来补偿 softmax。两者在 YaRN 这类方法里配合使用：一个管"旋转多快"，一个管"注意力多尖"。</p>
+</div>
+</section>
+
+<!-- ==================== 11. 变体 ==================== -->
 <section id="variants">
-<h2>10. RoPE 变体与扩展</h2>
+<h2>11. RoPE 变体与扩展</h2>
 
 <table>
   <thead>
@@ -970,7 +1578,7 @@ li { margin-bottom:6px; color:var(--text-secondary); font-size:14px; }
 
 <!-- ==================== 11. 总结 ==================== -->
 <section id="summary">
-<h2>11. 总结</h2>
+<h2>12. 总结</h2>
 
 <div class="diagram-container">
 <svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg">
@@ -1063,6 +1671,7 @@ function toggleTheme() {
   drawRotation();
   drawFrequency();
   drawDotProduct();
+  drawAttnScale();
 }
 (function() {
   const saved = localStorage.getItem('theme');
@@ -1100,12 +1709,13 @@ const searchData = [
   { id:'frequency', title:'频率设计', keywords:'频率 base theta 10000 外推' },
   { id:'freq-extrapolation', title:'长度外推', keywords:'外推 extrapolation NTK YaRN base 缩放' },
   { id:'advantages', title:'关键优势', keywords:'优势 相对 保范 衰减 可扩展' },
-  { id:'code', title:'代码实现', keywords:'代码 pytorch 实现 precompute apply' },
-  { id:'code-precompute', title:'频率预计算', keywords:'预计算 freqs_cis outer polar' },
-  { id:'code-apply', title:'应用旋转', keywords:'apply rotary view_as_complex' },
+  { id:'code', title:'代码实现 (Transformers)', keywords:'代码 pytorch 实现 transformers llama huggingface' },
+  { id:'code-precompute', title:'频率计算', keywords:'预计算 inv_freq compute_default 频率 base' },
+  { id:'code-apply', title:'rotate_half + apply', keywords:'apply rotary rotate_half cos sin 旋转' },
   { id:'demo-rotation', title:'旋转可视化 Demo', keywords:'demo 交互 可视化 旋转 canvas' },
   { id:'demo-frequency', title:'频率探索器 Demo', keywords:'demo 交互 频率 探索 canvas base' },
   { id:'demo-dotproduct', title:'内积衰减 Demo', keywords:'demo 交互 内积 衰减 距离' },
+  { id:'demo-attnscale', title:'attention_scaling 补偿 Demo', keywords:'demo 交互 attention_scaling attention_factor 外推 补偿 softmax 熵 温度 yarn mscale 缩放 长上下文' },
   { id:'variants', title:'RoPE 变体', keywords:'变体 NTK YaRN dynamic partial 2d 3d' },
   { id:'summary', title:'总结', keywords:'总结 summary 一句话' },
 ];
@@ -1553,16 +2163,148 @@ dpDimSlider.addEventListener('input', () => { dpQ = null; drawDotProduct(); });
 dpBaseSlider.addEventListener('input', drawDotProduct);
 dpMaxDistSlider.addEventListener('input', drawDotProduct);
 
+// ========== Demo 4: attention_scaling Compensation ==========
+const asNSlider = document.getElementById('asN');
+const asScaleSlider = document.getElementById('asScale');
+let asLogits = null, asLogitsN = 0;
+
+// Fixed logit landscape: a few "relevant" peaks over a sea of background tokens.
+function buildLogits(N) {
+  const logits = new Array(N);
+  // deterministic pseudo-random background so the picture is stable across redraws
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let i = 0; i < N; i++) logits[i] = rnd() * 0.6;          // background noise
+  // plant 3 relevant peaks proportional to N so they exist at any length
+  [0.18, 0.5, 0.82].forEach((frac, idx) => {
+    const p = Math.floor(frac * N);
+    logits[p] = 2.4 - idx * 0.3;                                 // salient tokens
+    if (p + 1 < N) logits[p + 1] = 1.4 - idx * 0.2;
+    if (p - 1 >= 0) logits[p - 1] = 1.3 - idx * 0.2;
+  });
+  return logits;
+}
+
+function softmax(logits, logitScale) {   // logitScale = temperature applied to logits (= s²)
+  const scaled = logits.map(v => v * logitScale);
+  const mx = Math.max(...scaled);
+  const exps = scaled.map(v => Math.exp(v - mx));
+  const sum = exps.reduce((s, v) => s + v, 0);
+  return exps.map(v => v / sum);
+}
+
+function entropy(probs) {
+  let h = 0;
+  for (const p of probs) if (p > 1e-12) h -= p * Math.log(p);
+  return h;
+}
+
+function setYarnScale() {
+  const N = parseInt(asNSlider.value);
+  const factor = Math.max(1, N / 32);                            // treat 32 as "training length"
+  const s = 0.1 * Math.log(factor) + 1.0;                        // YaRN default formula
+  asScaleSlider.value = Math.round(Math.min(2.2, Math.max(1.0, s)) * 100);
+  drawAttnScale();
+}
+
+function drawAttnScale() {
+  const canvas = document.getElementById('asCanvas');
+  const { ctx, w, h } = canvasDPR(canvas);
+  const N = parseInt(asNSlider.value);
+  const scale = parseInt(asScaleSlider.value) / 100;
+  document.getElementById('asNVal').textContent = N;
+  document.getElementById('asScaleVal').textContent = scale.toFixed(2);
+
+  if (!asLogits || asLogitsN !== N) { asLogits = buildLogits(N); asLogitsN = N; }
+
+  const base = softmax(asLogits, 1.0);              // no scaling (s = 1)
+  const scaled = softmax(asLogits, scale * scale);  // attention_scaling s ⇒ logits ×s²
+
+  const padL = 50, padR = 20, padT = 24, padB = 40;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const yMax = Math.max(Math.max(...base), Math.max(...scaled)) * 1.1;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // axes
+  ctx.strokeStyle = getCSS('--border');
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+
+  // y ticks
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  for (let t = 0; t <= 4; t++) {
+    const val = yMax * t / 4;
+    const y = h - padB - (val / yMax) * plotH;
+    ctx.fillText(val.toFixed(2), padL - 5, y + 3);
+  }
+
+  const xOf = i => padL + (N <= 1 ? 0 : (i / (N - 1)) * plotW);
+  const yOf = p => h - padB - (p / yMax) * plotH;
+
+  // baseline (s = 1) — grey filled area
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(base[0]));
+  for (let i = 1; i < N; i++) ctx.lineTo(xOf(i), yOf(base[i]));
+  ctx.lineTo(xOf(N - 1), h - padB); ctx.lineTo(xOf(0), h - padB); ctx.closePath();
+  ctx.fillStyle = getCSS('--text-muted') + '22';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(base[0]));
+  for (let i = 1; i < N; i++) ctx.lineTo(xOf(i), yOf(base[i]));
+  ctx.strokeStyle = getCSS('--text-muted');
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // scaled distribution — purple line
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(scaled[0]));
+  for (let i = 1; i < N; i++) ctx.lineTo(xOf(i), yOf(scaled[i]));
+  ctx.strokeStyle = getCSS('--purple');
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // x label
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.textAlign = 'center';
+  ctx.fillText('key 位置 (0 ~ N-1)', w / 2, h - 6);
+
+  // legend
+  ctx.textAlign = 'left';
+  ctx.fillStyle = getCSS('--text-muted');
+  ctx.fillRect(w - padR - 165, padT + 4, 18, 2);
+  ctx.fillText('未缩放 (s=1)', w - padR - 143, padT + 8);
+  ctx.fillStyle = getCSS('--purple');
+  ctx.fillRect(w - padR - 165, padT + 18, 18, 2);
+  ctx.fillText('乘上 attention_scaling', w - padR - 143, padT + 22);
+
+  // metrics
+  const peakBase = Math.max(...base), peakScaled = Math.max(...scaled);
+  document.getElementById('asPeak').textContent =
+    peakBase.toFixed(2) + ' → ' + peakScaled.toFixed(2);
+  document.getElementById('asEntropy').textContent =
+    entropy(base).toFixed(2) + ' → ' + entropy(scaled).toFixed(2);
+}
+
+asNSlider.addEventListener('input', () => { asLogits = null; drawAttnScale(); });
+asScaleSlider.addEventListener('input', drawAttnScale);
+
 // ========== Initial Draw ==========
 window.addEventListener('load', () => {
   drawRotation();
   drawFrequency();
   drawDotProduct();
+  drawAttnScale();
 });
 window.addEventListener('resize', () => {
   drawRotation();
   drawFrequency();
   drawDotProduct();
+  drawAttnScale();
 });
 </script>
 </body>
